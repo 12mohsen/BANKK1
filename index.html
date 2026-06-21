@@ -410,6 +410,14 @@ select.inp option{background:#0c1526;color:#e2e8f0}
 
       <div id="li_err" class="hidden text-xs text-crim-300 rounded-xl px-4 py-3 text-center font-600" style="background:rgba(153,27,58,.15);border:1px solid rgba(244,63,94,.22)"></div>
 
+      <!-- Stay signed in -->
+      <label onclick="toggleRememberMe()" class="flex items-center gap-2.5 cursor-pointer select-none py-1">
+        <span class="w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors" style="border-color:rgba(59,127,245,.4);background:rgba(8,15,28,.6)" id="li_remember_box">
+          <svg id="li_remember_check" class="hidden w-3.5 h-3.5 text-sapph-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+        </span>
+        <span class="text-sm font-600 text-slate-400">البقاء متصلاً على هذا الجهاز</span>
+      </label>
+
       <button onclick="doLogin()" class="btn btn-blue w-full py-3.5 text-base">
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
         تسجيل الدخول
@@ -818,8 +826,8 @@ select.inp option{background:#0c1526;color:#e2e8f0}
           </div>
           <div class="flex items-center gap-2 flex-wrap">
             <button onclick="exportPDF()" class="btn btn-blue btn-sm flex items-center gap-1.5 rounded-xl">
-              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-              تحميل PDF
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              عرض كشف الحساب
             </button>
             <button onclick="clearTx()" class="btn btn-ghost btn-sm flex items-center gap-1.5 rounded-xl">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
@@ -1174,6 +1182,45 @@ select.inp option{background:#0c1526;color:#e2e8f0}
 </div>
 
 <!-- ════════════════════════════════════════
+     PDF PREVIEW MODAL (عرض مدمج بدون تنزيل/فتح نافذة — آمن لـ WebView)
+════════════════════════════════════════ -->
+<div id="pdfPreviewModal" class="overlay hidden" style="padding:0.75rem">
+  <div class="glass rounded-2xl w-full h-full flex flex-col" style="max-width:1000px;max-height:95vh;border:1px solid rgba(59,127,245,.22)">
+    <!-- Header bar -->
+    <div class="flex items-center justify-between gap-3 px-4 py-3 shrink-0" style="border-bottom:1px solid rgba(30,53,96,.7)">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background:rgba(59,127,245,.18)">
+          <svg class="w-4 h-4 text-sapph-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        </div>
+        <div class="min-w-0">
+          <div class="text-sm font-800 text-white truncate">كشف الحساب</div>
+          <div id="pdf_preview_subtitle" class="text-xs text-slate-500 truncate"></div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button onclick="printPdfPreview()" class="btn btn-blue btn-sm flex items-center gap-1.5 rounded-xl">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a1 1 0 001-1v-4a1 1 0 00-1-1H9a1 1 0 00-1 1v4a1 1 0 001 1zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+          <span class="hidden sm:inline">طباعة / حفظ</span>
+        </button>
+        <button onclick="closePdfPreview()" class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors hover:bg-white/5" style="border:1px solid rgba(59,127,245,.18)">
+          <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Hint bar -->
+    <div class="px-4 py-2 text-center shrink-0" style="background:rgba(59,127,245,.08);border-bottom:1px solid rgba(30,53,96,.5)">
+      <p class="text-xs text-sapph-300 font-600">📌 لحفظ الملف: اضغط مطوّلاً على المعاينة أدناه واختر "حفظ"، أو استخدم زر "طباعة / حفظ"</p>
+    </div>
+
+    <!-- PDF iframe container -->
+    <div class="flex-1 overflow-hidden p-2" style="background:#1a1a1a">
+      <iframe id="pdfPreviewFrame" style="width:100%;height:100%;border:none;border-radius:.5rem;background:#fff" title="معاينة كشف الحساب"></iframe>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
      JAVASCRIPT ENGINE
 ════════════════════════════════════════ -->
 <script>
@@ -1185,6 +1232,58 @@ let session = null;           // cleared on logout
 let bioRegistered = false;
 let pendingWithdraw = null;
 let filter = { from: null, to: null, type: '' };
+let rememberMeChecked = false; // "البقاء متصلاً" — يتخطى شاشة الدخول عند العودة للتطبيق
+
+// ═══════════════════════════════════════════════
+// PERSISTENCE  (sessionStorage)
+// يحفظ حالة الحساب/الجلسة طالما التبويب مفتوحاً، ويُستعاد تلقائياً
+// عند إعادة تحميل الصفحة (F5)، ويُمسح تلقائياً عند إغلاق التبويب —
+// لا يستخدم أي تخزين دائم على الجهاز (لا localStorage).
+// ═══════════════════════════════════════════════
+const STORAGE_KEY = 'apexbank_session_v1';
+
+/** يحفظ اللقطة الحالية للحساب/الجلسة/حالة الواجهة في sessionStorage */
+function persistState() {
+  try {
+    const snapshot = {
+      registeredAccount,
+      session,
+      bioRegistered,
+      rememberMeChecked,
+      // أي شاشة كانت ظاهرة آخر مرة (signup / login / dash)
+      currentView: !document.getElementById('viewDash')?.classList.contains('hidden') ? 'dash'
+                 : !document.getElementById('viewLogin')?.classList.contains('hidden') ? 'login'
+                 : 'signup',
+    };
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+  } catch (e) {
+    console.warn('تعذّر حفظ الحالة في sessionStorage:', e);
+  }
+}
+
+/** يستعيد الحالة المحفوظة عند تحميل الصفحة، ويُعيد true إذا وُجدت بيانات صالحة */
+function restoreState() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const snap = JSON.parse(raw);
+    if (!snap || !snap.registeredAccount) return false;
+
+    registeredAccount = snap.registeredAccount;
+    session           = snap.session;
+    bioRegistered     = !!snap.bioRegistered;
+    rememberMeChecked = !!snap.rememberMeChecked;
+    return snap.currentView || 'login';
+  } catch (e) {
+    console.warn('تعذّر استعادة الحالة من sessionStorage:', e);
+    return false;
+  }
+}
+
+/** يمسح كل البيانات المحفوظة (يُستخدم عند الحاجة لإعادة ضبط كاملة) */
+function clearPersistedState() {
+  try { sessionStorage.removeItem(STORAGE_KEY); } catch (e) {}
+}
 
 // ═══════════════════════════════════════════════
 // UTILITIES
@@ -1701,6 +1800,8 @@ function renderMyCards() {
     </div>
     <span class="text-xs font-700 text-slate-400">إضافة بطاقة</span>`;
   wrap.appendChild(addTile);
+
+  persistState(); // حفظ الحالة بعد أي تغيير في البطاقات (إضافة/حذف/إظهار)
 }
 
 function createAccount() {
@@ -1718,7 +1819,8 @@ function createAccount() {
   registeredAccount = {
     name, username: user, password: pass, biometrics: bioRegistered,
     card: generateCardData(),  // بطاقة فريدة وحقيقية لهذا الحساب فقط
-    manualCards: []             // بطاقات يُضيفها المستخدم يدوياً
+    manualCards: [],            // بطاقات يُضيفها المستخدم يدوياً
+    stayConnected: false        // حالة "البقاء متصلاً" — تُحدَّث عند تسجيل الدخول
   };
 
   const now = new Date().toISOString();
@@ -1734,6 +1836,14 @@ function createAccount() {
   };
 
   bootDashboard();
+  persistState();
+}
+
+function toggleRememberMe() {
+  rememberMeChecked = !rememberMeChecked;
+  document.getElementById('li_remember_check').classList.toggle('hidden', !rememberMeChecked);
+  document.getElementById('li_remember_box').style.background = rememberMeChecked ? 'rgba(59,127,245,.18)' : 'rgba(8,15,28,.6)';
+  document.getElementById('li_remember_box').style.borderColor = rememberMeChecked ? '#3b7ff5' : 'rgba(59,127,245,.4)';
 }
 
 function doLogin() {
@@ -1743,13 +1853,16 @@ function doLogin() {
   if (!registeredAccount) return showErr('li_err','لا يوجد حساب مسجّل. يرجى إنشاء حساب أولاً.');
   if (user !== registeredAccount.username) return showErr('li_err','اسم المستخدم غير صحيح.');
   if (pass !== registeredAccount.password)  return showErr('li_err','كلمة المرور غير صحيحة.');
+  registeredAccount.stayConnected = rememberMeChecked;
   bootDashboard();
+  persistState();
 }
 
 function doBioLogin() {
   if (!registeredAccount) return showErr('li_err','لا يوجد حساب مسجّل.');
+  registeredAccount.stayConnected = rememberMeChecked;
   toast('success','تم التحقق بالبصمة','مرحباً ' + registeredAccount.name.split(' ')[0]);
-  setTimeout(bootDashboard, 400);
+  setTimeout(() => { bootDashboard(); persistState(); }, 400);
 }
 
 function bootDashboard() {
@@ -1784,8 +1897,22 @@ function bootDashboard() {
 function doLogout() {
   closeUserMenu();
   showView('login');
-  document.getElementById('li_user').value = '';
-  document.getElementById('li_pass').value = '';
+
+  if (registeredAccount && registeredAccount.stayConnected) {
+    // "البقاء متصلاً" مفعّل — نُبقي اسم المستخدم وكلمة المرور معبّأين تلقائياً
+    document.getElementById('li_user').value = registeredAccount.username;
+    document.getElementById('li_pass').value = registeredAccount.password;
+    rememberMeChecked = true;
+    document.getElementById('li_remember_check').classList.remove('hidden');
+    document.getElementById('li_remember_box').style.background = 'rgba(59,127,245,.18)';
+    document.getElementById('li_remember_box').style.borderColor = '#3b7ff5';
+    persistState(); // نحافظ على بيانات الحساب لتسجيل دخول سريع لاحقاً
+  } else {
+    document.getElementById('li_user').value = '';
+    document.getElementById('li_pass').value = '';
+    persistState(); // نحدّث currentView إلى 'login' مع إبقاء الحساب لإعادة تسجيل الدخول يدوياً
+  }
+
   if (registeredAccount && registeredAccount.biometrics) {
     document.getElementById('bioLoginWrap').classList.remove('hidden');
   }
@@ -2271,6 +2398,8 @@ function renderAll() {
 
     list.insertBefore(group, emptyRow);
   });
+
+  persistState(); // حفظ الحالة بعد أي تحديث في الرصيد/المعاملات
 }
 
 function renderChart(txs) {
@@ -2331,81 +2460,8 @@ document.getElementById('clearTxModal')?.addEventListener('click', e => {
 });
 
 // ═══════════════════════════════════════════════
-// PDF EXPORT — v4: Real Amiri Arabic font, bilingual RTL, split-decimal
+// PDF EXPORT — Arabic canvas rendering, bilingual RTL, split-decimal
 // ═══════════════════════════════════════════════
-
-/* Cache for the Amiri font base64 string — loaded once */
-let _amiriB64 = null;
-
-/**
- * Fetch the Amiri Regular font from jsDelivr and return its base64 string.
- * Amiri is an open-source Arabic font that ships with jsPDF-compatible TTF.
- * CDN: https://cdn.jsdelivr.net/npm/amiri-font@0.113.0/fonts/Amiri-Regular.ttf
- */
-async function loadAmiriFont() {
-  if (_amiriB64) return _amiriB64;
-  try {
-    const url = 'https://cdn.jsdelivr.net/npm/amiri-font@0.113.0/fonts/Amiri-Regular.ttf';
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('fetch failed');
-    const buf  = await resp.arrayBuffer();
-    // Convert ArrayBuffer → base64
-    let binary = '';
-    const bytes = new Uint8Array(buf);
-    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-    _amiriB64 = btoa(binary);
-    return _amiriB64;
-  } catch(e) {
-    console.warn('Amiri font load failed, falling back to canvas rendering', e);
-    return null;
-  }
-}
-
-/**
- * Render Arabic text onto an HTML <canvas> using the browser's Cairo font,
- * then embed the resulting PNG into the jsPDF document.
- * This is the guaranteed fallback — works even with no network.
- *
- * @param {object} doc       jsPDF instance
- * @param {string} text      Arabic string to render
- * @param {number} x         X position in mm (left edge of image)
- * @param {number} y         Y position in mm (vertical center of text)
- * @param {number} fontSize  Desired font size in pt
- * @param {string} color     CSS colour string (e.g. '#94a3b8')
- * @param {number} maxWidthMM  Maximum width in mm
- */
-function drawArabicCanvas(doc, text, x, y, fontSize, color, maxWidthMM) {
-  const scale   = 4; // 4× for crisp hi-DPI rendering
-  const fPx     = fontSize * scale * 1.33; // pt → px approximation
-  const maxPx   = (maxWidthMM || 160) * scale * 3.7795;
-
-  // Probe width
-  const probe = document.createElement('canvas');
-  const pCtx  = probe.getContext('2d');
-  pCtx.font   = `bold ${fPx}px Cairo, Amiri, serif`;
-  const textW = Math.min(pCtx.measureText(text).width + fPx, maxPx);
-
-  const cH = Math.ceil(fPx * 1.6);
-  const cW = Math.ceil(textW + fPx * .3);
-  const cv = document.createElement('canvas');
-  cv.width  = cW;
-  cv.height = cH;
-  const ctx = cv.getContext('2d');
-  ctx.clearRect(0, 0, cW, cH);
-  ctx.font         = `bold ${fPx}px Cairo, Amiri, serif`;
-  ctx.fillStyle    = color || '#e2e8f0';
-  ctx.direction    = 'rtl';
-  ctx.textAlign    = 'right';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, cW - fPx * .15, cH / 2);
-
-  const png  = cv.toDataURL('image/png');
-  const mmW  = cW  / scale / 3.7795;
-  const mmH  = cH  / scale / 3.7795;
-  // Centre vertically on y
-  doc.addImage(png, 'PNG', x, y - mmH * .5, mmW, mmH);
-  return mmW; // return rendered width so caller can offset next element
-}
 
 /**
  * رسم نص عربي بالكانفاس
@@ -2456,6 +2512,7 @@ async function exportPDF() {
   }
   toast('info','جاري إنشاء الكشف…','يُرجى الانتظار لحظة');
 
+  try {
   /* ── إعداد المستند ── */
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
@@ -2666,15 +2723,158 @@ async function exportPDF() {
   doc.text('APEX', W/2, H/2+12, {align:'center', angle:22});
   doc.setGState(doc.GState({opacity:1}));
 
-  doc.save('كشف-حساب-'+registeredAccount.username+'-'+toISO(new Date())+'.pdf');
-  toast('success','✓ تم تحميل الكشف','كشف الحساب العربي جاهز — '+filtered.length+' معاملة');
+  const fileName = 'كشف-حساب-'+registeredAccount.username+'-'+toISO(new Date())+'.pdf';
+  await savePdfSafely(doc, fileName);
+  toast('success','✓ الكشف جاهز للعرض','كشف الحساب العربي — '+filtered.length+' معاملة');
+
+  } catch (err) {
+    console.error('PDF export failed:', err);
+    toast('error','تعذّر إنشاء الكشف','حدث خطأ أثناء إنشاء الملف، حاول مرة أخرى');
+  }
 }
 
+/**
+ * عرض ملف PDF داخل نافذة منبثقة مدمجة في الصفحة نفسها (iframe بصيغة data:)
+ * (مثل التطبيقات المُولَّدة من appcreator24 وما شابهها)، حيث أن
+ * doc.save() الافتراضية في jsPDF قد تُغلق التطبيق لأنها تعتمد على
+ * فتح نافذة/رابط تنزيل قد لا يدعمه الـ WebView.
+ *
+ * الإستراتيجية:
+ * 1) نحاول إنشاء Blob ثم رابط تنزيل وهمي (الطريقة الأكثر توافقاً).
+ * 2) إذا فشلت، نحاول فتح الـ PDF كرابط data: في نافذة/تبويب جديد.
+ * 3) إذا فشل كل شيء، نعرض رسالة واضحة للمستخدم بدل انهيار التطبيق.
+ * لا يُسمح لأي خطأ بالتسرب خارج هذه الدالة.
+ */
+/**
+ * عرض ملف PDF داخل نافذة منبثقة مدمجة في الصفحة نفسها (iframe بصيغة data:)
+ * بدلاً من تنزيله أو فتحه في نافذة/تبويب جديد.
+ *
+ * السبب: تطبيقات WebView المُولَّدة من منصات مثل appcreator24 غالباً
+ * لا تملك معالج تنزيلات (DownloadListener) مُسجَّل، ولا تدعم فتح نوافذ
+ * جديدة (multipleWindowsSupported). محاولة استدعاء link.click() للتنزيل
+ * أو window.open() في هذه الحالة تُسبب استثناء على مستوى النظام (native)
+ * لا يمكن التقاطه بـ try/catch في JavaScript، فيؤدي لانهيار التطبيق بالكامل.
+ *
+ * الحل الآمن: لا نطلب من نظام التشغيل أي إجراء خارجي إطلاقاً — فقط نعرض
+ * الملف visually داخل <iframe> ضمن الصفحة، ونترك الحفظ الفعلي (إن رغب
+ * المستخدم) لإجراءات يدوية ضمن نفس صفحة الويب (الضغط المطوّل / الطباعة).
+ */
+async function savePdfSafely(doc, fileName) {
+  try {
+    const dataUri = doc.output('datauristring');
+    const frame = document.getElementById('pdfPreviewFrame');
+    frame.src = dataUri;
+    document.getElementById('pdf_preview_subtitle').textContent = fileName;
+    document.getElementById('pdfPreviewModal').classList.remove('hidden');
+    // نحتفظ بآخر بيانات Data URI لاستخدامها في زر الطباعة لاحقاً
+    window._lastPdfDataUri = dataUri;
+  } catch (e) {
+    console.error('PDF inline preview failed:', e);
+    toast('warn', 'تعذّر عرض الملف', 'حدث خطأ أثناء تجهيز معاينة الكشف');
+  }
+}
+
+function closePdfPreview() {
+  const modal = document.getElementById('pdfPreviewModal');
+  modal.classList.add('hidden');
+  // تفريغ الـ iframe لتحرير الذاكرة
+  const frame = document.getElementById('pdfPreviewFrame');
+  frame.src = 'about:blank';
+}
+
+/**
+ * يفتح حوار الطباعة الخاص بالمتصفح لمحتوى الـ iframe — يستخدم آلية
+ * الطباعة المدمجة في الصفحة (window.print داخل الـ iframe نفسه) بدلاً
+ * من أي تنزيل أو نافذة خارجية، وهو إجراء آمن داخل WebView لأنه لا يطلب
+ * شيئاً من نظام التشغيل خارج الصفحة الحالية.
+ */
+function printPdfPreview() {
+  try {
+    const frame = document.getElementById('pdfPreviewFrame');
+    if (frame && frame.contentWindow) {
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+    } else {
+      toast('warn', 'تعذّرت الطباعة', 'جرّب الضغط المطوّل على المعاينة لحفظ الملف');
+    }
+  } catch (e) {
+    console.warn('Print failed:', e);
+    toast('warn', 'تعذّرت الطباعة', 'جرّب الضغط المطوّل على المعاينة لحفظ الملف');
+  }
+}
+
+document.getElementById('pdfPreviewModal')?.addEventListener('click', e => {
+  if (e.target === document.getElementById('pdfPreviewModal')) closePdfPreview();
+});
+
 // ═══════════════════════════════════════════════
-// INIT
+// GLOBAL SAFETY NET — يمنع انهيار تطبيق WebView بسبب أي خطأ غير متوقع
+// (مهم خصوصاً عند تشغيل الموقع داخل تطبيقات مثل appcreator24)
+// ═══════════════════════════════════════════════
+window.addEventListener('error', function(e) {
+  console.error('Caught global error (app stays alive):', e.error || e.message);
+  e.preventDefault();
+  return true;
+});
+window.addEventListener('unhandledrejection', function(e) {
+  console.error('Caught unhandled promise rejection (app stays alive):', e.reason);
+  e.preventDefault();
+});
+
+// ═══════════════════════════════════════════════
+// INIT — استعادة الحالة المحفوظة إن وُجدت، وإلا عرض شاشة التسجيل
 // ═══════════════════════════════════════════════
 document.getElementById('witModal').addEventListener('click', e=>{ if(e.target===document.getElementById('witModal')) closeWitModal(); });
-showView('signup');
+
+(function initApp() {
+  const restoredView = restoreState();
+
+  if (!restoredView || !registeredAccount) {
+    // لا توجد بيانات محفوظة — عرض شاشة إنشاء الحساب كالمعتاد
+    showView('signup');
+    return;
+  }
+
+  // توجد بيانات محفوظة من جلسة سابقة (قبل تحديث الصفحة)
+  if (restoredView === 'dash' && session) {
+    // كان المستخدم داخل لوحة التحكم — نُعيد بناء الواجهة فوراً دون انتظار تسجيل دخول جديد
+    const dash = document.getElementById('viewDash');
+    const signup = document.getElementById('viewSignup');
+    signup.classList.add('hidden');
+    dash.classList.remove('hidden');
+    dash.style.opacity = '1';
+
+    const acc = registeredAccount;
+    document.getElementById('hdr_initial').textContent = acc.name.charAt(0).toUpperCase();
+    document.getElementById('hdr_user').textContent    = '@' + acc.username;
+    document.getElementById('hdr_login_time').textContent = '· جلسة مستعادة';
+    if (acc.biometrics) document.getElementById('hdr_bio_badge').classList.remove('hidden');
+    document.getElementById('card_name').textContent = acc.name.toUpperCase();
+    if (!acc.card) acc.card = generateCardData();
+    if (!acc.manualCards) acc.manualCards = [];
+    cardDetailsVisible = false;
+    renderCardDetails();
+    renderMyCards();
+    updateWitHint();
+    updateUserMenuBioState();
+    resetFilter();
+    toast('info', 'تم استعادة الجلسة', 'مرحباً بعودتك، ' + acc.name.split(' ')[0]);
+  } else {
+    // كان المستخدم في شاشة تسجيل الدخول — نعرضها مع تعبئة بياناته إن كان "البقاء متصلاً" مفعّلاً
+    showView('login');
+    if (registeredAccount.stayConnected) {
+      document.getElementById('li_user').value = registeredAccount.username;
+      document.getElementById('li_pass').value = registeredAccount.password;
+      rememberMeChecked = true;
+      document.getElementById('li_remember_check').classList.remove('hidden');
+      document.getElementById('li_remember_box').style.background = 'rgba(59,127,245,.18)';
+      document.getElementById('li_remember_box').style.borderColor = '#3b7ff5';
+    }
+    if (registeredAccount.biometrics) {
+      document.getElementById('bioLoginWrap').classList.remove('hidden');
+    }
+  }
+})();
 </script>
 </body>
 </html>
