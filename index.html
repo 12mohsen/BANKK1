@@ -8,8 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<!-- jsPDF removed: statement export now uses pure HTML rendering for guaranteed WebView compatibility -->
 <script>
 tailwind.config={theme:{extend:{colors:{
   ink:{950:'#04090f',900:'#080f1c',850:'#0c1526',800:'#101d34',750:'#132038',700:'#162642',600:'#1e3560'},
@@ -2460,333 +2459,202 @@ document.getElementById('clearTxModal')?.addEventListener('click', e => {
 });
 
 // ═══════════════════════════════════════════════
-// PDF EXPORT — Arabic canvas rendering, bilingual RTL, split-decimal
+// STATEMENT EXPORT — كشف حساب HTML منسّق (بدون jsPDF)
+// يُبنى كصفحة HTML كاملة ويُحقن مباشرة داخل الـ iframe، فيعمل بضمان
+// تام داخل أي متصفح أو WebView (بما فيها تطبيقات مثل appcreator24)
+// لأنه لا يعتمد على أي مكتبة توليد ملفات أو تنزيل — فقط HTML/CSS عادي.
 // ═══════════════════════════════════════════════
 
 /**
- * رسم نص عربي بالكانفاس
- * @param {string} align  'right' = يُرسم من x إلى اليسار (محاذاة يمين) | 'left' = الافتراضي
- * @returns {number} عرض الصورة بالمليمتر
+ * يبني نص HTML كامل لكشف الحساب (ترويسة، ملخص مالي، جدول معاملات، تذييل)
+ * بنفس البيانات والتصميم المستخدم سابقاً مع jsPDF، لكن كصفحة ويب عادية.
  */
-function canvasAR(doc, text, x, y, ptSize, hexColor, maxMM, align) {
-  const DPR   = 4;
-  const fPx   = ptSize * DPR * 1.33;
-  const maxPx = (maxMM || 200) * DPR * 3.7795;
+function buildStatementHTML(filtered, inflow, outflow) {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('ar-SA',{year:'numeric',month:'long',day:'numeric'});
+  const timeStr = now.toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});
+  const periodStr = (filter.from||filter.to)
+    ? 'الفترة: '+(filter.from||'البداية')+' ← '+(filter.to||'الآن')
+    : 'الفترة: جميع المعاملات';
 
-  const probe = document.createElement('canvas');
-  const pCtx  = probe.getContext('2d');
-  pCtx.font   = `bold ${fPx}px Cairo, sans-serif`;
-  const tw    = Math.min(pCtx.measureText(text).width * 1.1, maxPx);
+  const fmtSplit = n => {
+    const s = Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const [i,d] = s.split('.');
+    return `<span class="amt-i">${i}</span><span class="amt-d">.${d}</span> <span class="amt-c">SAR</span>`;
+  };
 
-  const cH = Math.ceil(fPx * 1.55);
-  const cW = Math.ceil(tw + fPx * .4);
-  const cv = document.createElement('canvas');
-  cv.width = cW; cv.height = cH;
-  const ctx = cv.getContext('2d');
-  ctx.clearRect(0,0,cW,cH);
-  ctx.font         = `bold ${fPx}px Cairo, sans-serif`;
-  ctx.fillStyle    = hexColor || '#e2e8f0';
-  ctx.direction    = 'rtl';
-  ctx.textAlign    = 'right';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, cW - fPx*.1, cH/2);
+  const rows = filtered.map((tx, i) => {
+    const d = new Date(tx.date);
+    const dStr = d.toLocaleDateString('ar-SA',{day:'2-digit',month:'2-digit',year:'numeric'});
+    const tStr = d.toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});
+    const isDeposit = tx.type === 'إيداع';
+    const typeColor = isDeposit ? '#10c98a' : tx.type==='سحب' ? '#f43f5e' : '#b45309';
+    const sign = isDeposit ? '+' : '-';
+    const amtColor = isDeposit ? '#0f9d6e' : '#dc2640';
+    return `
+      <tr>
+        <td class="c-num">${i+1}</td>
+        <td class="c-date">${dStr}<br><span class="sub">${tStr}</span></td>
+        <td><span class="type-badge" style="color:${typeColor};border-color:${typeColor}33;background:${typeColor}14">${tx.type}</span></td>
+        <td class="c-desc">${tx.desc}</td>
+        <td class="c-amt" style="color:${amtColor}">${sign} ${fmtSplit(tx.amount)}</td>
+        <td class="c-bal">${fmtSplit(tx.balance)}</td>
+      </tr>`;
+  }).join('');
 
-  const mmW = cW / DPR / 3.7795;
-  const mmH = cH / DPR / 3.7795;
+  return `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>كشف حساب - ${registeredAccount.username}</title>
+<style>
+  * { box-sizing: border-box; margin:0; padding:0; }
+  body { font-family: 'Tahoma','Arial',sans-serif; background:#fff; color:#1a1a2e; padding: 24px; direction: rtl; }
+  .header { display:flex; align-items:center; justify-content:space-between; background:#0a1220; color:#fff; padding:20px 24px; border-radius:10px; margin-bottom:16px; flex-wrap:wrap; gap:12px; }
+  .header-left { display:flex; align-items:center; gap:12px; }
+  .logo-box { width:46px; height:46px; background:#1a56d6; border-radius:10px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:20px; }
+  .bank-name { font-size:20px; font-weight:800; color:#6ba3ff; }
+  .bank-sub { font-size:11px; color:#94a3b8; margin-top:2px; }
+  .header-right { text-align:left; font-size:11px; color:#94a3b8; line-height:1.6; }
+  .header-right b { color:#cdd9ee; }
+  .period-bar { background:#eef3fb; border:1px solid #d7e3f7; border-radius:8px; padding:10px 16px; font-size:12px; color:#3a567f; display:flex; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:8px; }
+  .summary { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px; }
+  .sum-box { border-radius:10px; padding:14px 16px; border:1.5px solid; }
+  .sum-box.balance { background:#eef3fc; border-color:#3b7ff5; }
+  .sum-box.inflow  { background:#ecfaf4; border-color:#10c98a; }
+  .sum-box.outflow { background:#fdeef0; border-color:#f43f5e; }
+  .sum-label { font-size:11px; font-weight:700; color:#5a6b85; margin-bottom:6px; }
+  .sum-val { font-size:21px; font-weight:800; }
+  .balance .sum-val { color:#1a56d6; }
+  .inflow .sum-val { color:#0f9d6e; }
+  .outflow .sum-val { color:#dc2640; }
+  .amt-i { font-weight:800; }
+  .amt-d, .amt-c { font-size:.7em; opacity:.65; font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  thead th { background:#0d1932; color:#6ba3ff; padding:10px 8px; font-weight:700; text-align:right; border:1px solid #1c2c4a; font-size:11px; }
+  tbody td { padding:9px 8px; border:1px solid #e6ebf3; text-align:right; vertical-align:middle; }
+  tbody tr:nth-child(even) { background:#f7f9fc; }
+  .c-num { text-align:center; color:#9aa7bd; width:32px; }
+  .c-date { white-space:nowrap; }
+  .sub { font-size:10px; color:#9aa7bd; }
+  .type-badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; border:1px solid; }
+  .c-amt, .c-bal { text-align:left; font-weight:700; white-space:nowrap; }
+  .c-desc { max-width:220px; }
+  .footer { margin-top:18px; padding:12px 16px; background:#f4f6fa; border-radius:8px; font-size:10px; color:#8a96aa; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px; }
+  @media print {
+    body { padding: 8px; }
+    .header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <div class="logo-box">A</div>
+      <div>
+        <div class="bank-name">أبيكس بنك</div>
+        <div class="bank-sub">كشف حساب رسمي — Official Bank Statement</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div><b>صاحب الحساب:</b> ${registeredAccount.name}</div>
+      <div><b>اسم المستخدم:</b> @${registeredAccount.username}</div>
+      <div>${dateStr} — ${timeStr}</div>
+    </div>
+  </div>
 
-  /* إذا كانت محاذاة يمين، نُزيح x بحيث تنتهي الصورة عند x */
-  const drawX = (align === 'right') ? (x - mmW) : x;
-  doc.addImage(cv.toDataURL('image/png'), 'PNG', drawX, y - mmH*.5, mmW, mmH);
-  return mmW;
+  <div class="period-bar">
+    <span>${periodStr}</span>
+    <span>عدد المعاملات: ${filtered.length}</span>
+  </div>
+
+  <div class="summary">
+    <div class="sum-box balance">
+      <div class="sum-label">الرصيد الحالي</div>
+      <div class="sum-val">${fmtSplit(session.balance)}</div>
+    </div>
+    <div class="sum-box inflow">
+      <div class="sum-label">إجمالي الإيداعات</div>
+      <div class="sum-val">${fmtSplit(inflow)}</div>
+    </div>
+    <div class="sum-box outflow">
+      <div class="sum-label">إجمالي المصروفات</div>
+      <div class="sum-val">${fmtSplit(outflow)}</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>التاريخ والوقت</th>
+        <th>نوع العملية</th>
+        <th>الوصف / الملاحظة</th>
+        <th>المبلغ (ر.س)</th>
+        <th>الرصيد بعد (ر.س)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <span>أبيكس بنك · بيئة محاكاة · هذا الكشف لأغراض تعليمية فقط وليس وثيقة مالية رسمية</span>
+    <span>Ref: APX-${Date.now().toString().slice(-8)}</span>
+  </div>
+</body>
+</html>`;
 }
 
 /**
- * كشف الحساب — PDF عربي كامل بالكانفاس
+ * يبني ويعرض كشف الحساب كصفحة HTML داخل الـ iframe المدمج بالصفحة.
+ * لا يعتمد على jsPDF أو أي مكتبة خارجية — لذلك يعمل بضمان تام في
+ * أي متصفح أو WebView بما فيها تطبيقات appcreator24.
  */
-async function exportPDF() {
+function exportPDF() {
   if (!session || !registeredAccount) return;
   const filtered = getFiltered();
   if (!filtered.length) {
     toast('warn','لا توجد معاملات','لا يوجد ما يُصدَّر في هذه الفترة');
     return;
   }
-  toast('info','جاري إنشاء الكشف…','يُرجى الانتظار لحظة');
 
   try {
-  /* ── إعداد المستند ── */
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-  const W = 297, H = 210;
-  const ML = 14;          // هامش يسار
-  const MR = W - 14;     // حد يمين (283mm) — النصوص اليمينية تنتهي هنا
+    let inflow = 0, outflow = 0;
+    filtered.forEach(tx => {
+      if (tx.refundedFromId) return;
+      if (tx.refunded) return;
+      tx.type === 'إيداع' ? inflow += tx.amount : outflow += tx.amount;
+    });
 
-  /* ── أدوات الأرقام ── */
-  const splitN = n => {
-    const s = Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-    const [i,d] = s.split('.');
-    return { i, d: d||'00' };
-  };
-
-  /* ══════════════════════════════════════
-     الرأس  HEADER
-  ══════════════════════════════════════ */
-  doc.setFillColor(7,13,26);
-  doc.rect(0,0,W,50,'F');
-  doc.setFillColor(59,127,245);
-  doc.rect(0,50,W,2.2,'F');
-
-  /* مربع الشعار */
-  doc.setFillColor(26,86,214);
-  doc.roundedRect(ML, 9, 28, 28, 4,4,'F');
-  doc.setFont('helvetica','bold'); doc.setFontSize(20);
-  doc.setTextColor(255,255,255);
-  doc.text('A', ML+11, 27);
-
-  /* اسم البنك بالإنجليزية — جانب أيسر */
-  doc.setFont('helvetica','bold'); doc.setFontSize(22);
-  doc.setTextColor(107,163,255);
-  doc.text('ApexBank', ML+33, 22);
-
-  /* وصف البنك بالعربية — أيسر */
-  canvasAR(doc, 'المصرف الرقمي  —  أبيكس بنك', ML+33, 34, 8.5, '#475569', 120);
-
-  /* ── عنوان الكشف — أيمن محاذاة يمين ── */
-  canvasAR(doc, 'كشف حساب رسمي', MR, 16, 13, '#6ba3ff', 110, 'right');
-
-  /* ── وصف إنجليزي صغير — أيمن ── */
-  doc.setFont('helvetica','normal'); doc.setFontSize(8);
-  doc.setTextColor(50,70,105);
-  doc.text('Official Bank Statement', MR, 27, { align:'right' });
-
-  /* ── التاريخ والوقت — أيمن ── */
-  const now    = new Date();
-  const arDate = now.toLocaleDateString('ar-SA',{year:'numeric',month:'long',day:'numeric'});
-  const arTime = now.toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});
-  canvasAR(doc, 'التاريخ: '+arDate, MR, 37, 7, '#475569', 120, 'right');
-  canvasAR(doc, 'الوقت: '+arTime,  MR, 45, 7, '#3a5270', 80,  'right');
-
-  /* ══════════════════════════════════════
-     شريط بيانات الحساب
-  ══════════════════════════════════════ */
-  doc.setFillColor(11,21,42);
-  doc.rect(0,53,W,14,'F');
-
-  /* يسار: صاحب الحساب */
-  canvasAR(doc, 'صاحب الحساب:', ML, 61, 7, '#475569', 38);
-  canvasAR(doc, registeredAccount.name, ML+40, 61, 8.5, '#a8c7ff', 85);
-
-  /* وسط: اسم المستخدم */
-  canvasAR(doc, 'اسم المستخدم:', W/2-50, 61, 7, '#475569', 38);
-  canvasAR(doc, '@'+registeredAccount.username, W/2-10, 61, 8.5, '#6ba3ff', 70);
-
-  /* يمين: الفترة الزمنية — محاذاة يمين */
-  const arPeriod = (filter.from||filter.to)
-    ? 'الفترة: '+(filter.from||'البداية')+' ← '+(filter.to||'الآن')
-    : 'الفترة: جميع المعاملات';
-  canvasAR(doc, arPeriod, MR, 61, 7.5, '#64748b', 105, 'right');
-
-  /* ══════════════════════════════════════
-     صناديق الملخص المالي
-  ══════════════════════════════════════ */
-  let inflow=0, outflow=0;
-  filtered.forEach(tx => {
-    if (tx.refundedFromId) return;
-    if (tx.refunded) return;
-    tx.type==='إيداع' ? inflow+=tx.amount : outflow+=tx.amount;
-  });
-
-  const BY=70, BH=34, BW=88, BG=6;
-  [
-    { arTitle:'الرصيد الحالي',     val:session.balance, c:[59,127,245], x:ML },
-    { arTitle:'إجمالي الإيداعات', val:inflow,          c:[16,201,138], x:ML+BW+BG },
-    { arTitle:'إجمالي المصروفات', val:outflow,         c:[244,63,94],  x:ML+(BW+BG)*2 },
-  ].forEach(b => {
-    doc.setFillColor(
-      Math.round(b.c[0]*.09+6), Math.round(b.c[1]*.09+10), Math.round(b.c[2]*.09+20)
-    );
-    doc.roundedRect(b.x, BY, BW, BH, 3,3,'F');
-    doc.setDrawColor(b.c[0],b.c[1],b.c[2]); doc.setLineWidth(.5);
-    doc.roundedRect(b.x, BY, BW, BH, 3,3,'S');
-
-    /* عنوان الصندوق — محاذاة يمين داخل الصندوق */
-    canvasAR(doc, b.arTitle, b.x+BW-4, BY+9, 7.5, '#64748b', BW-8, 'right');
-
-    /* الرقم — الجزء الصحيح كبير والعشري صغير */
-    const {i:intP, d:decP} = splitN(b.val);
-    doc.setFont('helvetica','bold'); doc.setFontSize(16);
-    doc.setTextColor(b.c[0],b.c[1],b.c[2]);
-    doc.text(intP, b.x+6, BY+27);
-    const iW = doc.getTextWidth(intP);
-    doc.setFontSize(9);
-    doc.setGState(doc.GState({opacity:.5}));
-    doc.text('.'+decP, b.x+6+iW+.4, BY+27);
-    doc.setGState(doc.GState({opacity:1}));
-    doc.setFont('helvetica','normal'); doc.setFontSize(7);
-    doc.setTextColor(90,110,140);
-    doc.text('SAR', b.x+6+iW+doc.getTextWidth('.'+decP)+1.8, BY+27);
-  });
-
-  /* ══════════════════════════════════════
-     جدول المعاملات
-  ══════════════════════════════════════ */
-  const TABLE_Y = BY + BH + 4;
-  const COL_X   = [ML, ML+13, ML+43, ML+76, ML+156, ML+210];
-  const COL_W   = [13, 30,    33,    80,    54,      55];
-  const HEAD_H  = 10;
-  const ROW_H   = 11;
-
-  /* رأس الجدول */
-  doc.setFillColor(13,23,50);
-  doc.rect(ML, TABLE_Y, W-28, HEAD_H, 'F');
-  doc.setDrawColor(26,48,96); doc.setLineWidth(.3);
-  doc.rect(ML, TABLE_Y, W-28, HEAD_H, 'S');
-
-  const HEADS = ['#','التاريخ والوقت','نوع العملية','الوصف / الملاحظة','المبلغ (ر.س)','الرصيد بعد (ر.س)'];
-  HEADS.forEach((h,i) => {
-    canvasAR(doc, h, COL_X[i], TABLE_Y + HEAD_H/2 + 1, 7.2, '#6ba3ff', COL_W[i]);
-  });
-
-  /* صفوف الجدول */
-  let rowY = TABLE_Y + HEAD_H;
-  filtered.forEach((tx, idx) => {
-    const isDeposit = tx.type === 'إيداع';
-    doc.setFillColor(...(idx%2===0?[7,13,27]:[9,18,35]));
-    doc.rect(ML, rowY, W-28, ROW_H, 'F');
-    doc.setDrawColor(20,36,64); doc.setLineWidth(.12);
-    doc.line(ML, rowY+ROW_H, W-ML, rowY+ROW_H);
-
-    /* رقم الصف */
-    doc.setFont('helvetica','normal'); doc.setFontSize(7.5);
-    doc.setTextColor(60,80,115);
-    doc.text(String(idx+1), COL_X[0]+3, rowY+ROW_H/2+1, {baseline:'middle'});
-
-    /* التاريخ والوقت */
-    const d    = new Date(tx.date);
-    const dStr = d.toLocaleDateString('ar-SA',{day:'2-digit',month:'2-digit',year:'numeric'});
-    const tStr = d.toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});
-    canvasAR(doc, dStr, COL_X[1], rowY+ROW_H*.35, 6.5, '#8ba3c4', COL_W[1]);
-    canvasAR(doc, tStr, COL_X[1], rowY+ROW_H*.72, 5.5, '#475569', COL_W[1]);
-
-    /* نوع العملية */
-    const tc = isDeposit?'#10c98a':tx.type==='سحب'?'#f43f5e':'#facc15';
-    canvasAR(doc, tx.type, COL_X[2], rowY+ROW_H/2+1, 8, tc, COL_W[2]);
-
-    /* الوصف */
-    canvasAR(doc, tx.desc, COL_X[3], rowY+ROW_H/2+1, 7.5, '#b0c8e8', COL_W[3]);
-
-    /* المبلغ */
-    const sign = isDeposit?'+ ':'- ';
-    const {i:aI, d:aD} = splitN(tx.amount);
-    doc.setFont('helvetica','bold'); doc.setFontSize(10);
-    doc.setTextColor(...(isDeposit?[16,201,138]:[244,63,94]));
-    doc.text(sign+aI, COL_X[4], rowY+ROW_H/2+1, {baseline:'middle'});
-    const sIW = doc.getTextWidth(sign+aI);
-    doc.setFontSize(6.5); doc.setGState(doc.GState({opacity:.55}));
-    doc.text('.'+aD, COL_X[4]+sIW+.3, rowY+ROW_H/2+1, {baseline:'middle'});
-    doc.setGState(doc.GState({opacity:1}));
-
-    /* الرصيد بعد */
-    const {i:bI, d:bD} = splitN(tx.balance);
-    doc.setFont('helvetica','bold'); doc.setFontSize(9.5);
-    doc.setTextColor(140,168,205);
-    doc.text(bI, COL_X[5], rowY+ROW_H/2+1, {baseline:'middle'});
-    const bIW = doc.getTextWidth(bI);
-    doc.setFontSize(6); doc.setGState(doc.GState({opacity:.5}));
-    doc.setTextColor(100,130,170);
-    doc.text('.'+bD, COL_X[5]+bIW+.3, rowY+ROW_H/2+1, {baseline:'middle'});
-    doc.setGState(doc.GState({opacity:1}));
-
-    rowY += ROW_H;
-  });
-
-  /* إطار الجدول الخارجي */
-  doc.setDrawColor(26,48,96); doc.setLineWidth(.3);
-  doc.rect(ML, TABLE_Y, W-28, HEAD_H+ROW_H*filtered.length, 'S');
-
-  /* ══════════════════════════════════════
-     التذييل  FOOTER
-  ══════════════════════════════════════ */
-  const footY = H - 13;
-  doc.setFillColor(5,9,19); doc.rect(0,footY,W,13,'F');
-  doc.setFillColor(22,44,90); doc.rect(0,footY,W,.7,'F');
-
-  canvasAR(doc,'أبيكس بنك · بيئة محاكاة · هذا الكشف لأغراض تعليمية فقط وليس وثيقة مالية رسمية',
-    ML, footY+7, 6, '#2a4064', 200);
-  doc.setFont('helvetica','normal'); doc.setFontSize(6.5);
-  doc.setTextColor(38,62,95);
-  doc.text('Ref: APX-'+Date.now().toString().slice(-8), MR, footY+10, {align:'right'});
-
-  /* علامة مائية */
-  doc.setGState(doc.GState({opacity:.03}));
-  doc.setFont('helvetica','bold'); doc.setFontSize(60);
-  doc.setTextColor(59,127,245);
-  doc.text('APEX', W/2, H/2+12, {align:'center', angle:22});
-  doc.setGState(doc.GState({opacity:1}));
-
-  const fileName = 'كشف-حساب-'+registeredAccount.username+'-'+toISO(new Date())+'.pdf';
-  await savePdfSafely(doc, fileName);
-  toast('success','✓ الكشف جاهز للعرض','كشف الحساب العربي — '+filtered.length+' معاملة');
-
-  } catch (err) {
-    console.error('PDF export failed:', err);
-    toast('error','تعذّر إنشاء الكشف','حدث خطأ أثناء إنشاء الملف، حاول مرة أخرى');
-  }
-}
-
-/**
- * عرض ملف PDF داخل نافذة منبثقة مدمجة في الصفحة نفسها (iframe بصيغة data:)
- * (مثل التطبيقات المُولَّدة من appcreator24 وما شابهها)، حيث أن
- * doc.save() الافتراضية في jsPDF قد تُغلق التطبيق لأنها تعتمد على
- * فتح نافذة/رابط تنزيل قد لا يدعمه الـ WebView.
- *
- * الإستراتيجية:
- * 1) نحاول إنشاء Blob ثم رابط تنزيل وهمي (الطريقة الأكثر توافقاً).
- * 2) إذا فشلت، نحاول فتح الـ PDF كرابط data: في نافذة/تبويب جديد.
- * 3) إذا فشل كل شيء، نعرض رسالة واضحة للمستخدم بدل انهيار التطبيق.
- * لا يُسمح لأي خطأ بالتسرب خارج هذه الدالة.
- */
-/**
- * عرض ملف PDF داخل نافذة منبثقة مدمجة في الصفحة نفسها (iframe بصيغة data:)
- * بدلاً من تنزيله أو فتحه في نافذة/تبويب جديد.
- *
- * السبب: تطبيقات WebView المُولَّدة من منصات مثل appcreator24 غالباً
- * لا تملك معالج تنزيلات (DownloadListener) مُسجَّل، ولا تدعم فتح نوافذ
- * جديدة (multipleWindowsSupported). محاولة استدعاء link.click() للتنزيل
- * أو window.open() في هذه الحالة تُسبب استثناء على مستوى النظام (native)
- * لا يمكن التقاطه بـ try/catch في JavaScript، فيؤدي لانهيار التطبيق بالكامل.
- *
- * الحل الآمن: لا نطلب من نظام التشغيل أي إجراء خارجي إطلاقاً — فقط نعرض
- * الملف visually داخل <iframe> ضمن الصفحة، ونترك الحفظ الفعلي (إن رغب
- * المستخدم) لإجراءات يدوية ضمن نفس صفحة الويب (الضغط المطوّل / الطباعة).
- */
-async function savePdfSafely(doc, fileName) {
-  try {
-    const dataUri = doc.output('datauristring');
+    const html = buildStatementHTML(filtered, inflow, outflow);
     const frame = document.getElementById('pdfPreviewFrame');
-    frame.src = dataUri;
-    document.getElementById('pdf_preview_subtitle').textContent = fileName;
+    // srcdoc يضمن عرض HTML مباشرة دون الحاجة لـ Blob أو data: URI
+    frame.srcdoc = html;
+    document.getElementById('pdf_preview_subtitle').textContent =
+      'كشف-حساب-' + registeredAccount.username + '-' + toISO(new Date());
     document.getElementById('pdfPreviewModal').classList.remove('hidden');
-    // نحتفظ بآخر بيانات Data URI لاستخدامها في زر الطباعة لاحقاً
-    window._lastPdfDataUri = dataUri;
-  } catch (e) {
-    console.error('PDF inline preview failed:', e);
-    toast('warn', 'تعذّر عرض الملف', 'حدث خطأ أثناء تجهيز معاينة الكشف');
+
+    toast('success', '✓ الكشف جاهز للعرض', 'كشف الحساب — ' + filtered.length + ' معاملة');
+  } catch (err) {
+    console.error('Statement build failed:', err);
+    toast('error', 'تعذّر إنشاء الكشف', 'حدث خطأ أثناء تجهيز الكشف، حاول مرة أخرى');
   }
 }
 
 function closePdfPreview() {
   const modal = document.getElementById('pdfPreviewModal');
   modal.classList.add('hidden');
-  // تفريغ الـ iframe لتحرير الذاكرة
   const frame = document.getElementById('pdfPreviewFrame');
-  frame.src = 'about:blank';
+  frame.srcdoc = 'about:blank';
 }
 
 /**
  * يفتح حوار الطباعة الخاص بالمتصفح لمحتوى الـ iframe — يستخدم آلية
- * الطباعة المدمجة في الصفحة (window.print داخل الـ iframe نفسه) بدلاً
- * من أي تنزيل أو نافذة خارجية، وهو إجراء آمن داخل WebView لأنه لا يطلب
- * شيئاً من نظام التشغيل خارج الصفحة الحالية.
+ * الطباعة المدمجة في الصفحة (print داخل الـ iframe نفسه)، وهو إجراء
+ * آمن داخل WebView لأنه لا يطلب شيئاً من نظام التشغيل خارج الصفحة.
  */
 function printPdfPreview() {
   try {
