@@ -2848,6 +2848,13 @@ function confirmClearTx() {
   closeClearTxModal();
   renderAll();
   toast('info','تم مسح السجل','تم حذف جميع المعاملات');
+
+  // حذف كل معاملات المستخدم من Supabase
+  if (SB_UID) {
+    const url = `${SB_URL}/rest/v1/apex_transactions?user_id=eq.${encodeURIComponent(SB_UID)}`;
+    fetch(url, { method: 'DELETE', headers: sbH() })
+      .catch(e => console.warn('clear tx failed:', e));
+  }
 }
 
 document.getElementById('clearTxModal')?.addEventListener('click', e => {
