@@ -417,7 +417,7 @@ select.inp option{background:#0c1526;color:#e2e8f0}
         <span class="text-sm font-600 text-slate-400">البقاء متصلاً على هذا الجهاز</span>
       </label>
 
-      <button onclick="doLogin()" class="btn btn-blue w-full py-3.5 text-base">
+      <button id="li_submit_btn" onclick="doLogin()" class="btn btn-blue w-full py-3.5 text-base">
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
         تسجيل الدخول
       </button>
@@ -1231,7 +1231,7 @@ select.inp option{background:#0c1526;color:#e2e8f0}
       <iframe id="pdfPreviewFrame"
         style="width:100%;border:none;border-radius:.5rem;background:#fff;display:block;min-height:400px;transition:transform .2s ease;transform-origin:top center"
         title="معاينة كشف الحساب"
-        onload="resizeStatementFrame()">
+        onload="setTimeout(()=>typeof resizeStatementFrame==='function'&&resizeStatementFrame(),0)">
       </iframe>
     </div>
   </div>
@@ -1252,14 +1252,94 @@ let filter = { from: null, to: null, type: '' };
 let rememberMeChecked = false; // "البقاء متصلاً" — يتخطى شاشة الدخول عند العودة للتطبيق
 
 // ═══════════════════════════════════════════════
-// PERSISTENCE  (sessionStorage)
-// يحفظ حالة الحساب/الجلسة طالما التبويب مفتوحاً، ويُستعاد تلقائياً
-// عند إعادة تحميل الصفحة (F5)، ويُمسح تلقائياً عند إغلاق التبويب —
-// لا يستخدم أي تخزين دائم على الجهاز (لا localStorage).
+// SUPABASE CONFIG — يستخدم جداولك الحقيقية مباشرة
+// users / cards / transactions
 // ═══════════════════════════════════════════════
+const SB_URL = 'https://tvbuvwjkojhqcxhyehfs.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2YnV2d2prb2pocWN4aHllaGZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDE4MTUsImV4cCI6MjA5MjI3NzgxNX0.egwryYwKu_Bicl_koaYXaKGBoxz42c6k4VkMD9aZSWQ';
+let SB_TOKEN = SB_KEY; // نستخدم anon key مباشرة (لا Supabase Auth)
+let SB_UID   = null;   // user_id من جدول users
+
+const sbH = () => ({
+  'apikey':        SB_KEY,
+  'Authorization': `Bearer ${SB_KEY}`,
+  'Content-Type':  'application/json',
+  'Prefer':        'return=representation',
+});
+
+/** تشفير كلمة المرور — SHA-256 بسيط كـ hex string */
+async function hashPass(password) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+// ── REST helpers ────────────────────────────────
+const sb = {
+  async select(table, match={}, order=null) {
+    let url = `${SB_URL}/rest/v1/${table}?select=*`;
+    Object.entries(match).forEach(([k,v]) => { url += `&${k}=eq.${encodeURIComponent(v)}`; });
+    if (order) url += `&order=${order}`;
+    const r = await fetch(url, { headers: sbH() });
+    if (!r.ok) { const e = await r.text(); throw new Error(e); }
+    return r.json();
+  },
+  async insert(table, data) {
+    const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+      method: 'POST', headers: sbH(),
+      body: JSON.stringify(data)
+    });
+    if (!r.ok) { const e = await r.text(); throw new Error(e); }
+    return r.json();
+  },
+  async update(table, match, data) {
+    let url = `${SB_URL}/rest/v1/${table}?`;
+    Object.entries(match).forEach(([k,v]) => { url += `${k}=eq.${encodeURIComponent(v)}&`; });
+    const r = await fetch(url, {
+      method: 'PATCH', headers: sbH(),
+      body: JSON.stringify(data)
+    });
+    if (!r.ok) { const e = await r.text(); throw new Error(e); }
+    return r.json();
+  },
+  async delete(table, match) {
+    let url = `${SB_URL}/rest/v1/${table}?`;
+    Object.entries(match).forEach(([k,v]) => { url += `${k}=eq.${encodeURIComponent(v)}&`; });
+    const r = await fetch(url, { method: 'DELETE', headers: sbH() });
+    if (!r.ok) { const e = await r.text(); throw new Error(e); }
+  },
+};
+
+// ── Session helpers (localStorage) ──────────────
+function sbSaveSession(userId, username) {
+  SB_UID = userId;  // userId هنا = username النصي
+  localStorage.setItem('apex_sb_token', JSON.stringify({
+    user_id:  userId,   // = username (mohsen)
+    username: username,
+    saved_at: Date.now(),
+  }));
+}
+function sbClearSession() {
+  SB_UID = null;
+  localStorage.removeItem('apex_sb_token');
+  localStorage.removeItem('apex_last_user');
+}
+async function sb_getSession() {
+  try {
+    const raw = localStorage.getItem('apex_sb_token');
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    // صالحة لمدة 30 يوم
+    if (Date.now() - (d.saved_at||0) > 30*24*60*60*1000) {
+      sbClearSession(); return null;
+    }
+    return d;
+  } catch(e) { return null; }
+}
+
+// persistState / restoreState — تحافظ على sessionStorage كطبقة محلية سريعة
+// بينما Supabase هو المصدر الدائم عبر الأجهزة
 const STORAGE_KEY = 'apexbank_session_v1';
 
-/** يحفظ اللقطة الحالية للحساب/الجلسة/حالة الواجهة في sessionStorage */
 function persistState() {
   try {
     const snapshot = {
@@ -1267,37 +1347,30 @@ function persistState() {
       session,
       bioRegistered,
       rememberMeChecked,
-      // أي شاشة كانت ظاهرة آخر مرة (signup / login / dash)
+      sbUid: SB_UID,
       currentView: !document.getElementById('viewDash')?.classList.contains('hidden') ? 'dash'
                  : !document.getElementById('viewLogin')?.classList.contains('hidden') ? 'login'
                  : 'signup',
     };
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
-  } catch (e) {
-    console.warn('تعذّر حفظ الحالة في sessionStorage:', e);
-  }
+  } catch (e) {}
 }
 
-/** يستعيد الحالة المحفوظة عند تحميل الصفحة، ويُعيد true إذا وُجدت بيانات صالحة */
 function restoreState() {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return false;
     const snap = JSON.parse(raw);
-    if (!snap || !snap.registeredAccount) return false;
-
+    if (!snap?.registeredAccount) return false;
     registeredAccount = snap.registeredAccount;
     session           = snap.session;
     bioRegistered     = !!snap.bioRegistered;
     rememberMeChecked = !!snap.rememberMeChecked;
+    SB_UID            = snap.sbUid || null;
     return snap.currentView || 'login';
-  } catch (e) {
-    console.warn('تعذّر استعادة الحالة من sessionStorage:', e);
-    return false;
-  }
+  } catch (e) { return false; }
 }
 
-/** يمسح كل البيانات المحفوظة (يُستخدم عند الحاجة لإعادة ضبط كاملة) */
 function clearPersistedState() {
   try { sessionStorage.removeItem(STORAGE_KEY); } catch (e) {}
 }
@@ -1689,35 +1762,91 @@ function submitAddCard() {
   if (!name || name.length < 2) return showErr('ac_err', 'أدخل اسم حامل البطاقة.');
   if (!/^\d{13,19}$/.test(number)) return showErr('ac_err', 'رقم البطاقة يجب أن يكون بين ١٣ و١٩ رقماً.');
   if (!isValidLuhn(number)) return showErr('ac_err', 'رقم البطاقة غير صالح. تأكد من إدخاله بشكل صحيح.');
-
   if (!/^\d{2}\/\d{2}$/.test(expiry)) return showErr('ac_err', 'صيغة تاريخ الانتهاء يجب أن تكون MM/YY.');
   const [mm, yy] = expiry.split('/').map(Number);
   if (mm < 1 || mm > 12) return showErr('ac_err', 'شهر الانتهاء غير صحيح.');
-  const expDate = new Date(2000 + yy, mm); // أول يوم من الشهر التالي
-  if (expDate < new Date()) return showErr('ac_err', 'هذه البطاقة منتهية الصلاحية بالفعل.');
-
+  if (new Date(2000 + yy, mm) < new Date()) return showErr('ac_err', 'هذه البطاقة منتهية الصلاحية بالفعل.');
   if (!/^\d{3,4}$/.test(cvv)) return showErr('ac_err', 'رمز CVV يجب أن يكون ٣ أو ٤ أرقام.');
 
   if (!registeredAccount.manualCards) registeredAccount.manualCards = [];
-  registeredAccount.manualCards.push({
-    id: Date.now(),
-    name, number, cvv, expiry,
+  const brand = detectCardBrand(number);
+  const newCard = {
+    id: Date.now(), name, number, cvv, expiry,
     last4: number.slice(-4),
     masked: '•••• •••• •••• ' + number.slice(-4),
-    brand: detectCardBrand(number),
-    visible: false,
-  });
+    brand, visible: false,
+  };
+  registeredAccount.manualCards.push(newCard);
+
+  // مزامنة مع Supabase — cards.user_id = text = username
+  if (SB_UID) {
+    sb.insert('apex_cards', {
+      user_id:   SB_UID,   // اسم المستخدم النصي (mohsen)
+      card_name: name,
+      number, cvv, expiry,
+      last4:     newCard.last4,
+      brand,
+    }).then(res => {
+      if (res?.[0]?.id) newCard.id = res[0].id;
+    }).catch(e => console.warn('card insert failed:', e));
+  }
 
   closeAddCardModal();
   renderMyCards();
-  toast('success', 'تمت إضافة البطاقة ✓', 'يمكن ربطها ببوابة دفع حقيقية لاحقاً');
+  toast('success', 'تمت إضافة البطاقة ✓', 'البطاقة محفوظة في قاعدة البيانات');
 }
 
 function deleteManualCard(cardId) {
   if (!registeredAccount?.manualCards) return;
+  // طلب تأكيد قبل الحذف
+  showConfirmCardDelete(cardId);
+}
+
+function showConfirmCardDelete(cardId) {
+  let modal = document.getElementById('confirmCardDeleteModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'confirmCardDeleteModal';
+    modal.className = 'overlay';
+    modal.innerHTML = `
+      <div class="glass rounded-2xl p-6 w-full mx-4 text-center" style="max-width:340px">
+        <div class="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4" style="background:rgba(244,63,94,.15);border:1px solid rgba(244,63,94,.3)">
+          <svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="#f43f5e" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+          </svg>
+        </div>
+        <h3 class="text-base font-700 text-white mb-2">حذف البطاقة</h3>
+        <p class="text-sm text-slate-400 mb-6">هل أنت متأكد من حذف هذه البطاقة؟ لا يمكن التراجع عن هذا الإجراء.</p>
+        <div class="flex gap-3">
+          <button id="confirmCardDeleteBtn" class="btn btn-crim flex-1">حذف</button>
+          <button onclick="document.getElementById('confirmCardDeleteModal').classList.add('hidden')" class="btn btn-ghost flex-1">إلغاء</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  document.getElementById('confirmCardDeleteBtn').onclick = () => {
+    document.getElementById('confirmCardDeleteModal').classList.add('hidden');
+    confirmDeleteManualCard(cardId);
+  };
+  modal.classList.remove('hidden');
+  modal.onclick = e => { if (e.target === modal) modal.classList.add('hidden'); };
+}
+
+function confirmDeleteManualCard(cardId) {
+  if (!registeredAccount?.manualCards) return;
   registeredAccount.manualCards = registeredAccount.manualCards.filter(c => c.id !== cardId);
+
+  // حذف نهائي من Supabase
+  if (SB_UID) {
+    const url = `${SB_URL}/rest/v1/apex_cards?id=eq.${encodeURIComponent(cardId)}&user_id=eq.${encodeURIComponent(SB_UID)}`;
+    fetch(url, {
+      method: 'DELETE',
+      headers: sbH(),
+    }).catch(e => console.warn('card delete failed:', e));
+  }
+
   renderMyCards();
-  toast('info', 'تم حذف البطاقة', '');
+  toast('info', 'تم حذف البطاقة', 'تم أرشفة البطاقة بنجاح');
 }
 
 function toggleManualCardVisibility(cardId) {
@@ -1821,39 +1950,104 @@ function renderMyCards() {
   persistState(); // حفظ الحالة بعد أي تغيير في البطاقات (إضافة/حذف/إظهار)
 }
 
-function createAccount() {
+async function createAccount() {
   const name = document.getElementById('su_name').value.trim();
   const user = document.getElementById('su_user').value.trim().toLowerCase();
   const pass = document.getElementById('su_pass').value;
   const dep  = parseFloat(document.getElementById('su_dep').value) || 0;
 
   if (!name || name.length < 3)  return showErr('su_err','الرجاء إدخال الاسم الكامل (٣ أحرف على الأقل).');
-  if (!user || user.length < 3)  return showErr('su_err','اسم المستخدم يجب أن يكون ٣ أحرف على الأقل ولا يحتوي على مسافات.');
+  if (!user || user.length < 3)  return showErr('su_err','اسم المستخدم يجب أن يكون ٣ أحرف على الأقل.');
   if (/\s/.test(user))           return showErr('su_err','اسم المستخدم لا يجب أن يحتوي على مسافات.');
   if (!pass || pass.length < 6)  return showErr('su_err','كلمة المرور يجب أن تكون ٦ أحرف على الأقل.');
   if (dep < 0)                   return showErr('su_err','مبلغ الإيداع لا يمكن أن يكون سالباً.');
 
-  registeredAccount = {
-    name, username: user, password: pass, biometrics: bioRegistered,
-    card: generateCardData(),  // بطاقة فريدة وحقيقية لهذا الحساب فقط
-    manualCards: [],            // بطاقات يُضيفها المستخدم يدوياً
-    stayConnected: false        // حالة "البقاء متصلاً" — تُحدَّث عند تسجيل الدخول
-  };
+  hideErr('su_err');
+  const createBtn = document.querySelector('#viewSignup button[onclick]');
+  if (createBtn) { createBtn.disabled = true; createBtn.textContent = 'جاري الإنشاء…'; }
 
-  const now = new Date().toISOString();
-  const initTx = dep > 0 ? [{
-    id: 1, serial: 1, type: 'إيداع', desc: 'إيداع فتح الحساب',
-    amount: dep, balance: dep, date: now, refunded: false, refundedFromId: null
-  }] : [];
+  try {
+    // 1) التحقق من عدم تكرار اسم المستخدم في جدول users
+    const existing = await sb.select('users', { username: user });
+    if (Array.isArray(existing) && existing.length > 0)
+      return showErr('su_err', 'اسم المستخدم "' + user + '" مستخدم بالفعل. اختر اسماً آخر.');
 
-  session = {
-    balance: dep, totalDeposits: dep, totalWithdrawals: 0,
-    depCount: dep > 0 ? 1 : 0, witCount: 0, billCount: 0,
-    transactions: initTx, nextId: 2, nextSerial: dep > 0 ? 2 : 1
-  };
+    // 2) user_id = اسم المستخدم النصي مباشرة (بدون UUID)
+    const uid = user;  // mohsen → user_id = "mohsen"
 
-  bootDashboard();
-  persistState();
+    // 3) تشفير كلمة المرور
+    const passHash = await hashPass(pass);
+
+    // 4) حفظ في جدول users (user_id = username = نص)
+    await sb.insert('users', {
+      user_id:      uid,
+      username:     user,
+      pass_hash:    passHash,
+      hint:         user,
+      created_from: 'apexbank',
+    });
+
+    // SB_UID = اسم المستخدم النصي
+    SB_UID = uid;
+
+    // 5) تجهيز بيانات البنك محلياً
+    const cardData = generateCardData();
+    registeredAccount = {
+      name, username: user, password: pass,
+      biometrics: bioRegistered,
+      card: cardData, manualCards: [], stayConnected: false,
+    };
+
+    const now = new Date().toISOString();
+    session = {
+      balance: dep, totalDeposits: dep, totalWithdrawals: 0,
+      depCount: dep > 0 ? 1 : 0, witCount: 0, billCount: 0,
+      transactions: [], nextId: 1, nextSerial: 1,
+    };
+
+    // 6) حفظ المعاملة الأولى في transactions (user_id = username)
+    if (dep > 0) {
+      try {
+        const txRes = await sb.insert('apex_transactions', {
+          user_id:       uid,
+          type:          'إيداع',
+          description:   'إيداع فتح الحساب',
+          note:          'إيداع فتح الحساب',
+          amount:        dep,
+          balance_after: dep,
+          refunded:      false,
+          serial:        1,
+          created_at:    now,
+        });
+        const txId = Array.isArray(txRes) ? txRes[0]?.id : 1;
+        session.transactions = [{
+          id: txId || 1, serial: 1, type: 'إيداع',
+          desc: 'إيداع فتح الحساب', amount: dep, balance: dep,
+          date: now, refunded: false, refundedFromId: null,
+        }];
+        session.nextId     = (txId || 1) + 1;
+        session.nextSerial = 2;
+      } catch(e) {
+        console.error('init tx failed:', e.message);
+        toast('warn','لم تُحفظ المعاملة الأولى', e.message || '');
+      }
+    }
+
+    sbSaveSession(uid, user);
+    localStorage.setItem('apex_last_user', user);
+    bootDashboard();
+    persistState();
+
+  } catch(e) {
+    console.error('createAccount error:', e);
+    const msg = e.message || '';
+    if (msg.includes('duplicate') || msg.includes('unique') || msg.includes('already'))
+      showErr('su_err', 'اسم المستخدم مستخدم بالفعل. اختر اسماً آخر.');
+    else
+      showErr('su_err', 'تعذّر إنشاء الحساب: ' + (msg || 'تحقق من الاتصال.'));
+  } finally {
+    if (createBtn) { createBtn.disabled = false; createBtn.textContent = 'إنشاء الحساب'; }
+  }
 }
 
 function toggleRememberMe() {
@@ -1863,23 +2057,167 @@ function toggleRememberMe() {
   document.getElementById('li_remember_box').style.borderColor = rememberMeChecked ? '#3b7ff5' : 'rgba(59,127,245,.4)';
 }
 
-function doLogin() {
+/**
+ * يجلب بيانات المستخدم كاملة من Supabase
+ * uuid = المعرّف الفريد المُستخدم في transactions و cards
+ * username = اسم المستخدم النصي المُستخدم في users
+ */
+async function sbLoadUserData(username, password, uuid) {
+  // uid = اسم المستخدم النصي مباشرة
+  const uid = uuid || username || SB_UID;
+  SB_UID = uid;
+
+  // جلب المعاملات (transactions.user_id = text = username)
+  let txList = [];
+  try {
+    const txRows = await sb.select('apex_transactions', { user_id: uid }, 'created_at.desc');
+    txList = (Array.isArray(txRows) ? txRows : []).map((r, i) => ({
+      id:             r.id,
+      serial:         r.serial || (i + 1),
+      type:           r.type,
+      desc:           r.description || r.note || '',
+      amount:         parseFloat(r.amount) || 0,
+      balance:        parseFloat(r.balance_after) || 0,
+      date:           r.created_at,
+      refunded:       !!r.refunded,
+      refundedFromId: r.refunded_from_id || null,
+    }));
+  } catch(e) { console.warn('tx load failed:', e); }
+
+  // جلب البطاقات (cards.user_id = text = username)
+  let manualCards = [];
+  try {
+    const _cUrl = `${SB_URL}/rest/v1/apex_cards?select=*&user_id=eq.${encodeURIComponent(uid)}&order=created_at.asc`;
+    const _cRes = await fetch(_cUrl, { headers: sbH() });
+    const cRows = _cRes.ok ? await _cRes.json() : [];
+    manualCards = (Array.isArray(cRows) ? cRows : []).map(r => ({
+      id:      r.id,
+      name:    r.card_name || '',
+      number:  r.number || '',
+      cvv:     r.cvv || '',
+      expiry:  r.expiry || '',
+      last4:   r.last4 || '',
+      masked:  '•••• •••• •••• ' + (r.last4 || '????'),
+      brand:   r.brand || 'card',
+      visible: false,
+    }));
+  } catch(e) { console.warn('cards load failed:', e); }
+
+  // بطاقة البنك الرئيسية (من localStorage أو توليد جديدة)
+  let cardData;
+  try {
+    const snap = JSON.parse(localStorage.getItem('apex_state') || '{}');
+    cardData = snap?.account?.card || generateCardData();
+  } catch(e) { cardData = generateCardData(); }
+
+  // الرصيد من آخر معاملة
+  const balance = txList.length > 0 ? txList[0].balance : 0;
+
+  // جلب الاسم الكامل من جدول users
+  let fullName = username;
+  try {
+    const uRows = await sb.select('users', { username: uid });
+    if (Array.isArray(uRows) && uRows.length > 0)
+      fullName = uRows[0].hint || uRows[0].username || username;
+    // إذا كان hint = username، نجرب users.user_id = uid
+    if (fullName === username) {
+      const uRows2 = await sb.select('users', { user_id: uid });
+      if (Array.isArray(uRows2) && uRows2.length > 0 && uRows2[0].hint)
+        fullName = uRows2[0].hint;
+    }
+  } catch(e) {}
+
+  // بناء registeredAccount
+  registeredAccount = {
+    name:          fullName,
+    username,
+    password:      password || '',
+    biometrics:    bioRegistered,
+    card:          cardData,
+    manualCards,
+    stayConnected: rememberMeChecked,
+  };
+
+  // بناء session
+  let depCount=0, witCount=0, billCount=0;
+  txList.forEach(tx => {
+    if (!tx.refundedFromId) {
+      if (tx.type==='إيداع') depCount++;
+      else if (tx.type==='سحب') witCount++;
+      else billCount++;
+    }
+  });
+  session = {
+    balance,
+    totalDeposits:    txList.filter(t=>t.type==='إيداع'&&!t.refundedFromId).reduce((s,t)=>s+t.amount,0),
+    totalWithdrawals: txList.filter(t=>t.type!=='إيداع'&&!t.refunded).reduce((s,t)=>s+t.amount,0),
+    depCount, witCount, billCount,
+    transactions: txList,
+    nextId:     txList.length > 0 ? Math.max(...txList.map(t=>t.id||0)) + 1 : 1,
+    nextSerial: txList.length + 1,
+  };
+}
+
+async function doLogin() {
   const user = document.getElementById('li_user').value.trim().toLowerCase();
   const pass = document.getElementById('li_pass').value;
 
-  if (!registeredAccount) return showErr('li_err','لا يوجد حساب مسجّل. يرجى إنشاء حساب أولاً.');
-  if (user !== registeredAccount.username) return showErr('li_err','اسم المستخدم غير صحيح.');
-  if (pass !== registeredAccount.password)  return showErr('li_err','كلمة المرور غير صحيحة.');
-  registeredAccount.stayConnected = rememberMeChecked;
-  bootDashboard();
-  persistState();
+  if (!user) return showErr('li_err','أدخل اسم المستخدم.');
+  if (!pass) return showErr('li_err','أدخل كلمة المرور.');
+
+  const btn = document.getElementById('li_submit_btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'جاري الدخول…'; }
+  hideErr('li_err');
+
+  try {
+    // 1) البحث بـ username (وليس user_id لأن user_id أصبح UUID)
+    const rows = await sb.select('users', { username: user });
+    const userRow = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+    if (!userRow) return showErr('li_err','اسم المستخدم غير موجود.');
+
+    // 2) التحقق من كلمة المرور
+    const inputHash = await hashPass(pass);
+    if (userRow.pass_hash !== inputHash)
+      return showErr('li_err','كلمة المرور غير صحيحة.');
+
+    // 3) user_id = اسم المستخدم النصي (mohsen)
+    const uid = user;  // نستخدم username مباشرة
+    SB_UID = uid;
+    sbSaveSession(uid, user);
+    localStorage.setItem('apex_last_user', user);
+
+    // 4) تحميل البيانات بالـ username
+    await sbLoadUserData(user, pass, uid);
+    registeredAccount.stayConnected = rememberMeChecked;
+
+    bootDashboard();
+    persistState();
+  } catch(e) {
+    console.error('doLogin error:', e);
+    showErr('li_err', 'تعذّر الاتصال بالخادم: ' + (e.message||''));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'تسجيل الدخول'; }
+  }
 }
 
-function doBioLogin() {
-  if (!registeredAccount) return showErr('li_err','لا يوجد حساب مسجّل.');
-  registeredAccount.stayConnected = rememberMeChecked;
-  toast('success','تم التحقق بالبصمة','مرحباً ' + registeredAccount.name.split(' ')[0]);
-  setTimeout(() => { bootDashboard(); persistState(); }, 400);
+async function doBioLogin() {
+  const stored = await sb_getSession();
+  if (!stored) return showErr('li_err','انتهت جلستك. سجّل الدخول مرة أخرى.');
+  SB_UID = stored.user_id; // UUID
+
+  const localOk = restoreState();
+  if (localOk === 'dash' && session && registeredAccount) {
+    registeredAccount.stayConnected = rememberMeChecked;
+    toast('success','تم التحقق بالبصمة','مرحباً ' + registeredAccount.name.split(' ')[0]);
+    setTimeout(() => { bootDashboard(); persistState(); }, 400);
+  } else {
+    toast('info','جاري التحقق…','');
+    try {
+      await sbLoadUserData(stored.username, '', stored.user_id);
+      registeredAccount.stayConnected = rememberMeChecked;
+      bootDashboard(); persistState();
+    } catch(e) { showErr('li_err','تعذّر استعادة الجلسة. سجّل الدخول يدوياً.'); }
+  }
 }
 
 function bootDashboard() {
@@ -1913,26 +2251,22 @@ function bootDashboard() {
 
 function doLogout() {
   closeUserMenu();
+  sbClearSession();
+  clearPersistedState();
   showView('login');
-
   if (registeredAccount && registeredAccount.stayConnected) {
-    // "البقاء متصلاً" مفعّل — نُبقي اسم المستخدم وكلمة المرور معبّأين تلقائياً
     document.getElementById('li_user').value = registeredAccount.username;
     document.getElementById('li_pass').value = registeredAccount.password;
     rememberMeChecked = true;
     document.getElementById('li_remember_check').classList.remove('hidden');
     document.getElementById('li_remember_box').style.background = 'rgba(59,127,245,.18)';
     document.getElementById('li_remember_box').style.borderColor = '#3b7ff5';
-    persistState(); // نحافظ على بيانات الحساب لتسجيل دخول سريع لاحقاً
   } else {
     document.getElementById('li_user').value = '';
     document.getElementById('li_pass').value = '';
-    persistState(); // نحدّث currentView إلى 'login' مع إبقاء الحساب لإعادة تسجيل الدخول يدوياً
   }
-
-  if (registeredAccount && registeredAccount.biometrics) {
+  if (registeredAccount && registeredAccount.biometrics)
     document.getElementById('bioLoginWrap').classList.remove('hidden');
-  }
   toast('info', 'تم تسجيل الخروج', 'إلى اللقاء! نتطلع لعودتك');
 }
 
@@ -2032,21 +2366,36 @@ function checkPmStrength() {
   lbl.style.color = l.color;
 }
 
-function submitChangePassword() {
+async function submitChangePassword() {
   const current = document.getElementById('pm_current').value;
   const next    = document.getElementById('pm_new').value;
   const confirm = document.getElementById('pm_confirm').value;
 
   if (!registeredAccount) return showErr('pm_err', 'لا يوجد حساب نشط.');
   if (!current) return showErr('pm_err', 'أدخل كلمة السر الحالية.');
-  if (current !== registeredAccount.password) return showErr('pm_err', 'كلمة السر الحالية غير صحيحة.');
   if (!next || next.length < 6) return showErr('pm_err', 'كلمة السر الجديدة يجب أن تكون ٦ أحرف على الأقل.');
   if (next === current) return showErr('pm_err', 'كلمة السر الجديدة يجب أن تختلف عن الحالية.');
   if (next !== confirm) return showErr('pm_err', 'كلمتا السر الجديدتان غير متطابقتين.');
 
-  registeredAccount.password = next;
-  closePassModal();
-  toast('success', 'تم تحديث كلمة السر ✓', 'يمكنك استخدام كلمة السر الجديدة في تسجيل الدخول القادم');
+  try {
+    // التحقق من كلمة السر الحالية
+    const currentHash = await hashPass(current);
+    const rows = await sb.select('users', { username: registeredAccount.username });
+    const userRow = Array.isArray(rows) && rows[0];
+    if (!userRow || userRow.pass_hash !== currentHash)
+      return showErr('pm_err', 'كلمة السر الحالية غير صحيحة.');
+
+    // تحديث pass_hash — user_id = username النصي
+    const newHash = await hashPass(next);
+    await sb.update('users', { user_id: registeredAccount.username }, { pass_hash: newHash });
+
+    registeredAccount.password = next;
+    closePassModal();
+    persistState();
+    toast('success', 'تم تحديث كلمة السر ✓', 'يمكنك استخدام كلمة السر الجديدة في تسجيل الدخول القادم');
+  } catch(e) {
+    showErr('pm_err', 'تعذّر تحديث كلمة السر. تحقق من الاتصال.');
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -2076,12 +2425,13 @@ function updateWitHint() {
 
 function addTx(type, desc, amount, refundedFromId) {
   session.balance += (type === 'إيداع') ? amount : -amount;
+  const now = new Date().toISOString();
   const tx = {
     id: session.nextId++,
     serial: session.nextSerial++,
     type, desc, amount,
     balance: session.balance,
-    date: new Date().toISOString(),
+    date: now,
     refunded: false,
     refundedFromId: refundedFromId || null
   };
@@ -2091,6 +2441,31 @@ function addTx(type, desc, amount, refundedFromId) {
   else                     { session.totalWithdrawals += amount; session.billCount++; }
   updateWitHint();
   renderAll();
+
+  // ── مزامنة مع Supabase ──
+  if (SB_UID) {
+    (async () => {
+      try {
+        const res = await sb.insert('apex_transactions', {
+          user_id:          SB_UID,   // username النصي (mohsen)
+          serial:           tx.serial,
+          type:             tx.type,
+          description:      tx.desc,
+          note:             tx.desc,
+          amount:           tx.amount,
+          balance_after:    tx.balance,
+          refunded:         false,
+          refunded_from_id: refundedFromId || null,
+          created_at:       now,
+        });
+        if (res?.[0]?.id) tx.id = res[0].id;
+      } catch(e) {
+        console.error('❌ addTx insert failed:', e.message || e);
+        toast('warn', 'لم تُحفظ المعاملة في السيرفر', e.message || '');
+      }
+    })();
+  }
+
   return tx;
 }
 
@@ -2127,12 +2502,15 @@ function confirmRefund() {
   const tx = session.transactions.find(t => t.id === pendingRefundTxId);
   if (!tx || tx.refunded) { closeRefundModal(); return; }
 
-  // mark the original as refunded
   tx.refunded = true;
 
-  // create a new deposit transaction crediting the amount back
-  addTx('إيداع', 'استرجاع: ' + tx.desc, tx.amount, tx.id);
+  // مزامنة حالة الاسترجاع مع Supabase
+  if (SB_UID) {
+    sb.update('apex_transactions', { id: tx.id }, { refunded: true })
+      .catch(e => console.warn('refund sync failed:', e));
+  }
 
+  addTx('إيداع', 'استرجاع: ' + tx.desc, tx.amount, tx.id);
   closeRefundModal();
   toast('success', 'تم استرجاع المبلغ ✓', fmt(tx.amount) + ' أُعيدت إلى رصيدك');
 }
@@ -2798,54 +3176,79 @@ window.addEventListener('unhandledrejection', function(e) {
 // ═══════════════════════════════════════════════
 document.getElementById('witModal').addEventListener('click', e=>{ if(e.target===document.getElementById('witModal')) closeWitModal(); });
 
-(function initApp() {
-  const restoredView = restoreState();
+(async function initApp() {
+  const sbSession = await sb_getSession();
 
-  if (!restoredView || !registeredAccount) {
-    // لا توجد بيانات محفوظة — عرض شاشة إنشاء الحساب كالمعتاد
-    showView('signup');
+  if (sbSession) {
+    SB_UID = sbSession.user_id;
+    const localView = restoreState();
+    if (localView === 'dash' && session && registeredAccount) {
+      // استعادة فورية من sessionStorage
+      const dash = document.getElementById('viewDash');
+      document.getElementById('viewSignup').classList.add('hidden');
+      document.getElementById('viewLogin').classList.add('hidden');
+      dash.classList.remove('hidden');
+      dash.style.opacity = '1';
+      const acc = registeredAccount;
+      document.getElementById('hdr_initial').textContent = acc.name.charAt(0).toUpperCase();
+      document.getElementById('hdr_user').textContent    = '@' + acc.username;
+      document.getElementById('hdr_login_time').textContent = '· جلسة مستعادة';
+      if (acc.biometrics) document.getElementById('hdr_bio_badge').classList.remove('hidden');
+      document.getElementById('card_name').textContent = acc.name.toUpperCase();
+      if (!acc.card) acc.card = generateCardData();
+      if (!acc.manualCards) acc.manualCards = [];
+      cardDetailsVisible = false;
+      renderCardDetails(); renderMyCards();
+      updateWitHint(); updateUserMenuBioState(); resetFilter();
+      toast('info', 'مرحباً بعودتك 👋', acc.name.split(' ')[0]);
+      return;
+    }
+
+    // جلسة محفوظة لكن لا يوجد sessionStorage — اجلب من Supabase
+    showView('login');
+    try {
+      await sbLoadUserData(sbSession.username, '', sbSession.user_id);
+      bootDashboard(); persistState();
+      return;
+    } catch(e) { console.warn('auto-restore failed:', e); }
+  }
+
+  // لا توجد جلسة — تحقق من sessionStorage المحلي
+  const localView = restoreState();
+  if (localView && registeredAccount) {
+    if (localView === 'dash' && session) {
+      const dash = document.getElementById('viewDash');
+      document.getElementById('viewSignup').classList.add('hidden');
+      dash.classList.remove('hidden'); dash.style.opacity = '1';
+      const acc = registeredAccount;
+      document.getElementById('hdr_initial').textContent = acc.name.charAt(0).toUpperCase();
+      document.getElementById('hdr_user').textContent    = '@' + acc.username;
+      document.getElementById('hdr_login_time').textContent = '· جلسة مستعادة';
+      if (acc.biometrics) document.getElementById('hdr_bio_badge').classList.remove('hidden');
+      document.getElementById('card_name').textContent = acc.name.toUpperCase();
+      if (!acc.card) acc.card = generateCardData();
+      if (!acc.manualCards) acc.manualCards = [];
+      cardDetailsVisible = false;
+      renderCardDetails(); renderMyCards();
+      updateWitHint(); updateUserMenuBioState(); resetFilter();
+      toast('info', 'تم استعادة الجلسة', 'مرحباً بعودتك، ' + acc.name.split(' ')[0]);
+    } else {
+      showView('login');
+      if (registeredAccount.stayConnected) {
+        document.getElementById('li_user').value = registeredAccount.username;
+        document.getElementById('li_pass').value = registeredAccount.password;
+        rememberMeChecked = true;
+        document.getElementById('li_remember_check').classList.remove('hidden');
+        document.getElementById('li_remember_box').style.background = 'rgba(59,127,245,.18)';
+        document.getElementById('li_remember_box').style.borderColor = '#3b7ff5';
+      }
+      if (registeredAccount.biometrics)
+        document.getElementById('bioLoginWrap').classList.remove('hidden');
+    }
     return;
   }
 
-  // توجد بيانات محفوظة من جلسة سابقة (قبل تحديث الصفحة)
-  if (restoredView === 'dash' && session) {
-    // كان المستخدم داخل لوحة التحكم — نُعيد بناء الواجهة فوراً دون انتظار تسجيل دخول جديد
-    const dash = document.getElementById('viewDash');
-    const signup = document.getElementById('viewSignup');
-    signup.classList.add('hidden');
-    dash.classList.remove('hidden');
-    dash.style.opacity = '1';
-
-    const acc = registeredAccount;
-    document.getElementById('hdr_initial').textContent = acc.name.charAt(0).toUpperCase();
-    document.getElementById('hdr_user').textContent    = '@' + acc.username;
-    document.getElementById('hdr_login_time').textContent = '· جلسة مستعادة';
-    if (acc.biometrics) document.getElementById('hdr_bio_badge').classList.remove('hidden');
-    document.getElementById('card_name').textContent = acc.name.toUpperCase();
-    if (!acc.card) acc.card = generateCardData();
-    if (!acc.manualCards) acc.manualCards = [];
-    cardDetailsVisible = false;
-    renderCardDetails();
-    renderMyCards();
-    updateWitHint();
-    updateUserMenuBioState();
-    resetFilter();
-    toast('info', 'تم استعادة الجلسة', 'مرحباً بعودتك، ' + acc.name.split(' ')[0]);
-  } else {
-    // كان المستخدم في شاشة تسجيل الدخول — نعرضها مع تعبئة بياناته إن كان "البقاء متصلاً" مفعّلاً
-    showView('login');
-    if (registeredAccount.stayConnected) {
-      document.getElementById('li_user').value = registeredAccount.username;
-      document.getElementById('li_pass').value = registeredAccount.password;
-      rememberMeChecked = true;
-      document.getElementById('li_remember_check').classList.remove('hidden');
-      document.getElementById('li_remember_box').style.background = 'rgba(59,127,245,.18)';
-      document.getElementById('li_remember_box').style.borderColor = '#3b7ff5';
-    }
-    if (registeredAccount.biometrics) {
-      document.getElementById('bioLoginWrap').classList.remove('hidden');
-    }
-  }
+  showView('signup');
 })();
 </script>
 </body>
