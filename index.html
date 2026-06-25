@@ -2533,8 +2533,10 @@ function updateWitHint() {
 function addTx(type, desc, amount, refundedFromId) {
   session.balance += (type === 'إيداع') ? amount : -amount;
   const now = new Date().toISOString();
+  // localId مؤقت للتعرف على المعاملة قبل رجوع ID من Supabase
+  const localId = 'loc_' + Date.now() + '_' + Math.random().toString(36).slice(2,6);
   const tx = {
-    id: session.nextId++,
+    id: localId,
     serial: session.nextSerial++,
     type, desc, amount,
     balance: session.balance,
@@ -2542,6 +2544,7 @@ function addTx(type, desc, amount, refundedFromId) {
     refunded: false,
     refundedFromId: refundedFromId || null
   };
+  session.nextId++;
   session.transactions.unshift(tx);
   if (type === 'إيداع')    { session.totalDeposits   += amount; session.depCount++;  }
   else if (type === 'سحب') { session.totalWithdrawals += amount; session.witCount++;  }
@@ -2554,7 +2557,7 @@ function addTx(type, desc, amount, refundedFromId) {
     (async () => {
       try {
         const res = await sb.insert('apex_transactions', {
-          user_id:          SB_UID,   // username النصي (mohsen)
+          user_id:          SB_UID,
           serial:           tx.serial,
           type:             tx.type,
           description:      tx.desc,
@@ -2565,7 +2568,11 @@ function addTx(type, desc, amount, refundedFromId) {
           refunded_from_id: refundedFromId || null,
           created_at:       now,
         });
-        if (res?.[0]?.id) tx.id = res[0].id;
+        // بعد رجوع الـ ID الحقيقي — حدّث tx.id وأعد الـ render
+        if (res?.[0]?.id) {
+          tx.id = res[0].id;
+          renderAll(); // إعادة رسم لتحديث زر الاسترجاع بالـ ID الصحيح
+        }
       } catch(e) {
         console.error('❌ addTx insert failed:', e.message || e);
         toast('warn', 'لم تُحفظ المعاملة في السيرفر', e.message || '');
@@ -2582,8 +2589,14 @@ function addTx(type, desc, amount, refundedFromId) {
 let pendingRefundTxId = null;
 
 function openRefundModal(txId) {
-  const tx = session.transactions.find(t => t.id === txId);
+  // البحث بـ id سواء كان رقماً أو localId نصي
+  const tx = session.transactions.find(t => String(t.id) === String(txId));
   if (!tx) return;
+  // إذا كان الـ ID لا يزال مؤقتاً (لم يرجع من Supabase بعد)
+  if (String(tx.id).startsWith('loc_')) {
+    toast('warn', 'يرجى الانتظار لحظة', 'جاري حفظ المعاملة في السيرفر...');
+    return;
+  }
   if (tx.type !== 'سحب' && tx.type !== 'فاتورة') {
     toast('warn', 'غير قابل للاسترجاع', 'الاسترجاع متاح فقط لعمليات السحب والفواتير');
     return;
@@ -2606,7 +2619,7 @@ function closeRefundModal() {
 
 function confirmRefund() {
   if (pendingRefundTxId == null) return;
-  const tx = session.transactions.find(t => t.id === pendingRefundTxId);
+  const tx = session.transactions.find(t => String(t.id) === String(pendingRefundTxId));
   if (!tx || tx.refunded) { closeRefundModal(); return; }
 
   tx.refunded = true;
@@ -2848,7 +2861,7 @@ function renderAll() {
       /* refund eligibility — only سحب / فاتورة, and not already refunded */
       const canRefund = (tx.type === 'سحب' || tx.type === 'فاتورة') && !tx.refunded;
       const refundHTML = canRefund
-        ? `<button class="tx-refund-btn" onclick="event.stopPropagation(); openRefundModal(${tx.id})">
+        ? `<button class="tx-refund-btn" onclick="event.stopPropagation(); openRefundModal('${tx.id}')">
              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a5 5 0 015 5v1m-15-6l4-4m-4 4l4 4"/></svg>
              استرجاع
            </button>`
