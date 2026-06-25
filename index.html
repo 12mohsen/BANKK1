@@ -182,6 +182,52 @@ select.inp option{background:#0c1526;color:#e2e8f0}
 /* date group fade-in */
 .tx-group{animation:fadeUp .3s ease both}
 
+/* ── Transaction scroll container ── */
+#txScrollWrap{
+  position:relative;
+  max-height:520px;
+  overflow:hidden;
+}
+#txScrollInner{
+  max-height:520px;
+  overflow-y:auto;
+  scroll-behavior:smooth;
+  overscroll-behavior:contain;
+}
+/* شريط تمرير مخصص */
+#txScrollInner::-webkit-scrollbar{width:4px}
+#txScrollInner::-webkit-scrollbar-track{background:transparent}
+#txScrollInner::-webkit-scrollbar-thumb{background:rgba(59,127,245,.35);border-radius:99px}
+#txScrollInner::-webkit-scrollbar-thumb:hover{background:rgba(59,127,245,.6)}
+/* fade top */
+#txFadeTop{
+  position:absolute;top:0;left:0;right:0;height:48px;
+  background:linear-gradient(to bottom,rgba(8,18,40,1) 0%,transparent 100%);
+  pointer-events:none;z-index:2;
+  opacity:0;transition:opacity .25s;
+}
+/* fade bottom */
+#txFadeBot{
+  position:absolute;bottom:0;left:0;right:0;height:48px;
+  background:linear-gradient(to top,rgba(8,18,40,1) 0%,transparent 100%);
+  pointer-events:none;z-index:2;
+  opacity:0;transition:opacity .25s;
+}
+#txFadeTop.show,#txFadeBot.show{opacity:1}
+/* scroll hint arrows */
+#txArrowTop,#txArrowBot{
+  position:absolute;left:50%;transform:translateX(-50%);
+  width:28px;height:28px;border-radius:50%;
+  background:rgba(59,127,245,.18);border:1px solid rgba(59,127,245,.3);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;z-index:3;
+  opacity:0;transition:opacity .25s;pointer-events:none;
+}
+#txArrowTop{top:6px}
+#txArrowBot{bottom:6px}
+#txArrowTop.show,#txArrowBot.show{opacity:1;pointer-events:auto}
+#txArrowTop svg,#txArrowBot svg{width:14px;height:14px;color:#3b7ff5;stroke:#3b7ff5}
+
 /* ── Sidebar mini chart ── */
 .sparkbar{display:flex;align-items:flex-end;gap:2px;height:40px}
 .sparkbar-col{flex:1;border-radius:2px 2px 0 0;min-width:4px;transition:height .4s ease,background .3s}
@@ -877,18 +923,72 @@ select.inp option{background:#0c1526;color:#e2e8f0}
       </div>
 
       <!-- Rajhi-style grouped transaction list -->
-      <div id="txList" class="divide-y" style="border-top:1px solid rgba(22,38,66,.5)">
+      <div id="txScrollWrap">
+        <!-- fade top -->
+        <div id="txFadeTop"></div>
+        <div id="txArrowTop" onclick="document.getElementById('txScrollInner').scrollBy({top:-180,behavior:'smooth'})">
+          <svg fill="none" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" stroke="#3b7ff5"/></svg>
+        </div>
+
+        <div id="txScrollInner">
+          <div id="txList" class="divide-y" style="border-top:1px solid rgba(22,38,66,.5)">
         <div id="emptyRow" class="px-5 py-14 text-center">
           <svg class="w-12 h-12 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="0.8" style="color:#1e3560"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
           <p class="text-sm text-slate-600 font-600">لا توجد معاملات في هذه الفترة</p>
           <p class="text-xs text-slate-700 mt-1">استخدم النماذج أعلاه لإجراء عملياتك المصرفية</p>
         </div>
-      </div>
+          </div>
+        </div><!-- /txScrollInner -->
+
+        <!-- fade bottom -->
+        <div id="txArrowBot" onclick="document.getElementById('txScrollInner').scrollBy({top:180,behavior:'smooth'})">
+          <svg fill="none" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" stroke="#3b7ff5"/></svg>
+        </div>
+        <div id="txFadeBot"></div>
+      </div><!-- /txScrollWrap -->
     </div>
   </main>
 
   <footer class="text-center text-xs text-slate-700 py-5 font-500 mt-2" style="border-top:1px solid rgba(22,38,66,.6)">
     أبيكس بنك © 2025 · المالك mohsen
+
+    <!-- زر المشاركة -->
+    <div class="flex items-center justify-center gap-3 mt-4 flex-wrap px-4">
+
+      <!-- فتح في المتصفح -->
+      <a href="https://bankk1.netlify.app/" target="_blank" rel="noopener"
+         class="flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-600 transition-all"
+         style="background:rgba(59,127,245,.13);border:1px solid rgba(59,127,245,.28);color:#7eb3ff;text-decoration:none">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/>
+        </svg>
+        افتح في المتصفح
+      </a>
+
+      <!-- تحميل APK -->
+      <a href="https://www.appcreator24.com/app4090563-6hgmnt" target="_blank" rel="noopener"
+         class="flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-600 transition-all"
+         style="background:rgba(16,201,138,.12);border:1px solid rgba(16,201,138,.28);color:#10c98a;text-decoration:none">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+        </svg>
+        تحميل تطبيق الأندرويد APK
+      </a>
+
+      <!-- زر مشاركة رابط -->
+      <button onclick="shareApp()"
+         class="flex items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-600 transition-all"
+         style="background:rgba(250,204,21,.1);border:1px solid rgba(250,204,21,.25);color:#facc15">
+        <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
+        </svg>
+        مشاركة التطبيق
+      </button>
+
+    </div>
   </footer>
 </div>
 
@@ -2795,6 +2895,7 @@ function renderAll() {
   });
 
   persistState(); // حفظ الحالة بعد أي تحديث في الرصيد/المعاملات
+  if (window.__refreshTxScroll) window.__refreshTxScroll();
 }
 
 function renderChart(txs) {
@@ -2824,6 +2925,18 @@ function renderChart(txs) {
     lbl.textContent = d.toLocaleDateString('ar-SA',{day:'2-digit',month:'short'});
     lbls.appendChild(lbl);
   });
+}
+
+function shareApp() {
+  const url  = 'https://bankk1.netlify.app/';
+  const text = 'جرّب أبيكس بنك — تطبيق محاكاة مصرفية 🏦';
+  if (navigator.share) {
+    navigator.share({ title: 'أبيكس بنك', text, url }).catch(()=>{});
+  } else {
+    navigator.clipboard?.writeText(url).then(()=>{
+      toast('success','تم نسخ الرابط ✓','يمكنك الآن مشاركته مع أصدقائك');
+    }).catch(()=>{ toast('info','رابط التطبيق',url); });
+  }
 }
 
 function clearTx() {
@@ -2856,6 +2969,40 @@ function confirmClearTx() {
       .catch(e => console.warn('clear tx failed:', e));
   }
 }
+
+// ── TX scroll fade/arrows ──────────────────────────────
+(function(){
+  function initTxScroll(){
+    const inner = document.getElementById('txScrollInner');
+    if (!inner) return;
+    const ftop = document.getElementById('txFadeTop');
+    const fbot = document.getElementById('txFadeBot');
+    const atop = document.getElementById('txArrowTop');
+    const abot = document.getElementById('txArrowBot');
+    function update(){
+      const atTop  = inner.scrollTop < 10;
+      const atBot  = inner.scrollTop + inner.clientHeight >= inner.scrollHeight - 10;
+      const hasScroll = inner.scrollHeight > inner.clientHeight + 20;
+      ftop.classList.toggle('show', !atTop && hasScroll);
+      fbot.classList.toggle('show', !atBot && hasScroll);
+      atop.classList.toggle('show', !atTop && hasScroll);
+      abot.classList.toggle('show', !atBot && hasScroll);
+    }
+    inner.addEventListener('scroll', update, {passive:true});
+    // راقب التغيرات في المحتوى
+    new MutationObserver(update).observe(inner, {childList:true,subtree:true});
+    update();
+  }
+  // شغّل بعد تحميل الصفحة وبعد كل render
+  document.addEventListener('DOMContentLoaded', ()=>setTimeout(initTxScroll,300));
+  const _origRenderTx = window.renderTxList;
+  window.__refreshTxScroll = function(){
+    setTimeout(()=>{
+      const inner = document.getElementById('txScrollInner');
+      if(inner) inner.dispatchEvent(new Event('scroll'));
+    },50);
+  };
+})();
 
 document.getElementById('clearTxModal')?.addEventListener('click', e => {
   if (e.target === document.getElementById('clearTxModal')) closeClearTxModal();
