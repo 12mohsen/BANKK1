@@ -244,6 +244,8 @@ select.inp option{background:#0c1526;color:#e2e8f0}
 @keyframes slideUp{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:translateY(0)}}
 @keyframes scaleIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
 @keyframes pulseRing{0%{transform:scale(.78);opacity:1}100%{transform:scale(2.4);opacity:0}}
+@keyframes spin360{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+.spin-anim{animation:spin360 .8s linear infinite}
 @keyframes scanLine{0%{top:2%}100%{top:94%}}
 @keyframes checkDraw{from{stroke-dashoffset:60}to{stroke-dashoffset:0}}
 @keyframes toastIn{from{opacity:0;transform:translateY(-18px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
@@ -785,6 +787,63 @@ select.inp option{background:#0c1526;color:#e2e8f0}
       </div>
     </div>
 
+    <!-- ── Row 2.2: Transfer (تحويل بين الحسابات) ── -->
+    <div class="glass rounded-2xl p-6">
+      <div class="flex items-center gap-2.5 mb-5">
+        <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style="background:rgba(59,127,245,.18)">
+          <svg class="w-4.5 h-4.5 text-sapph-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:1.1rem;height:1.1rem"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m4 6H4m0 0l4 4m-4-4l4-4"/></svg>
+        </div>
+        <div>
+          <h3 class="font-800 text-white text-sm leading-tight">تحويل أموال</h3>
+          <p class="text-xs text-slate-500">أرسل أموالاً إلى حساب آخر فوراً</p>
+        </div>
+      </div>
+
+      <!-- Your account number (username) — share to receive money -->
+      <div class="glass-sm rounded-xl px-4 py-3 mb-5 flex items-center justify-between flex-wrap gap-2">
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-jade-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.206"/></svg>
+          <span class="text-xs text-slate-400 font-600">رقم حسابك للاستقبال</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="tr_myaccount" class="text-sm font-800 text-sapph-300 tracking-wide">—</span>
+          <button onclick="copyMyAccount()" class="text-slate-500 hover:text-sapph-300 transition-colors p-1" title="نسخ">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-700 text-slate-400 mb-1.5 tracking-wider">حساب المستفيد (اسم المستخدم)</label>
+          <div class="relative">
+            <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-700 select-none">@</span>
+            <input id="tr_to" type="text" placeholder="اسم حساب المستلم" class="inp" style="padding-right:2.2rem" autocomplete="off"/>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-700 text-slate-400 mb-1.5 tracking-wider">المبلغ (ر.س)</label>
+          <div class="relative">
+            <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-700 select-none">ر.س</span>
+            <input id="tr_amt" type="number" min="0.01" step="0.01" placeholder="0.00" class="inp" style="padding-right:3rem"/>
+          </div>
+        </div>
+      </div>
+      <label class="block text-xs font-700 text-slate-400 mb-1.5 mt-4 tracking-wider">ملاحظة (اختياري)</label>
+      <input id="tr_note" type="text" placeholder="مثال: سداد دين" class="inp mb-4"/>
+
+      <div class="glass-sm rounded-xl px-3.5 py-2.5 mb-4 flex items-center justify-between">
+        <span class="text-xs text-slate-500 font-600">الرصيد المتاح</span>
+        <span id="tr_bal_hint" class="text-xs text-sapph-300 font-700">—</span>
+      </div>
+
+      <button onclick="openTransferModal()" class="btn btn-blue w-full py-3">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m4 6H4m0 0l4 4m-4-4l4-4"/></svg>
+        تحويل
+      </button>
+      <div id="tr_err" class="hidden mt-2 text-xs text-crim-300 text-center font-600"></div>
+    </div>
+
     <!-- ── Row 2.5: My Cards ── -->
     <div class="glass rounded-2xl p-6">
       <div class="flex items-center justify-between mb-5">
@@ -877,6 +936,10 @@ select.inp option{background:#0c1526;color:#e2e8f0}
             <p id="tx_label" class="text-xs text-slate-500 mt-1 font-500">لا توجد معاملات بعد</p>
           </div>
           <div class="flex items-center gap-2 flex-wrap">
+            <button id="refreshBtn" onclick="refreshFromServer(false)" class="btn btn-ghost btn-sm flex items-center gap-1.5 rounded-xl" title="تحديث من الخادم">
+              <svg id="refreshIcon" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              تحديث
+            </button>
             <button onclick="exportPDF()" class="btn btn-blue btn-sm flex items-center gap-1.5 rounded-xl">
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
               عرض كشف الحساب
@@ -919,6 +982,7 @@ select.inp option{background:#0c1526;color:#e2e8f0}
               <option value="">الكل</option>
               <option value="إيداع">إيداع فقط</option>
               <option value="سحب">سحب فقط</option>
+              <option value="تحويل">تحويلات فقط</option>
               <option value="فاتورة">فواتير فقط</option>
             </select>
           </div>
@@ -1086,6 +1150,55 @@ select.inp option{background:#0c1526;color:#e2e8f0}
         تأكيد السحب
       </button>
       <button onclick="closeWitModal()" class="btn btn-ghost flex-1 py-3.5">إلغاء</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     TRANSFER CONFIRM MODAL
+════════════════════════════════════════ -->
+<div id="transferModal" class="overlay hidden">
+  <div class="glass rounded-3xl p-7 w-full max-w-sm anim-scalein" style="border:1px solid rgba(59,127,245,.22)">
+    <div class="flex items-center gap-3 mb-5">
+      <div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style="background:rgba(26,86,214,.25)">
+        <svg class="w-5 h-5 text-sapph-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m4 6H4m0 0l4 4m-4-4l4-4"/></svg>
+      </div>
+      <div>
+        <h3 class="font-800 text-white text-lg leading-tight">تأكيد التحويل</h3>
+        <p class="text-xs text-slate-500 font-500">يرجى مراجعة التفاصيل قبل الإرسال</p>
+      </div>
+    </div>
+
+    <div class="glass-sm rounded-xl p-4 mb-5 space-y-3">
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-slate-400 font-600">المستفيد</span>
+        <span id="tm_to" class="text-sm font-800 text-white text-left"></span>
+      </div>
+      <div class="h-px" style="background:rgba(30,53,96,.8)"></div>
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-slate-400 font-600">المبلغ المُحوَّل</span>
+        <span id="tm_amount" class="text-xl font-800 text-sapph-300"></span>
+      </div>
+      <div class="h-px" style="background:rgba(30,53,96,.8)"></div>
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-slate-400 font-600">الملاحظة</span>
+        <span id="tm_note" class="text-sm font-700 text-slate-200 text-left"></span>
+      </div>
+      <div class="h-px" style="background:rgba(30,53,96,.8)"></div>
+      <div class="flex justify-between items-center">
+        <span class="text-xs text-slate-400 font-600">رصيدك بعد التحويل</span>
+        <span id="tm_after" class="text-sm font-700 text-jade-300"></span>
+      </div>
+    </div>
+
+    <p class="text-xs text-slate-600 font-500 mb-5 leading-relaxed">بالضغط على "تأكيد التحويل" سيتم خصم المبلغ فوراً من رصيدك وإضافته لحساب المستفيد، ولا يمكن التراجع عن العملية.</p>
+
+    <div class="flex gap-3">
+      <button id="tm_confirm_btn" onclick="confirmTransfer()" class="btn btn-blue flex-1 py-3.5">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+        تأكيد التحويل
+      </button>
+      <button onclick="closeTransferModal()" class="btn btn-ghost flex-1 py-3.5">إلغاء</button>
     </div>
   </div>
 </div>
@@ -1355,6 +1468,7 @@ let registeredAccount = null; // persists after logout
 let session = null;           // cleared on logout
 let bioRegistered = false;
 let pendingWithdraw = null;
+let pendingTransfer = null;
 let filter = { from: null, to: null, type: '' };
 let rememberMeChecked = false; // "البقاء متصلاً" — يتخطى شاشة الدخول عند العودة للتطبيق
 
@@ -2251,6 +2365,7 @@ async function sbLoadUserData(username, password, uuid) {
     if (!tx.refundedFromId) {
       if (tx.type==='إيداع') depCount++;
       else if (tx.type==='سحب') witCount++;
+      else if (tx.type==='تحويل') witCount++;
       else billCount++;
     }
   });
@@ -2332,6 +2447,8 @@ function bootDashboard() {
   // Header
   document.getElementById('hdr_initial').textContent = acc.name.charAt(0).toUpperCase();
   document.getElementById('hdr_user').textContent    = '@' + acc.username;
+  const myAcc = document.getElementById('tr_myaccount');
+  if (myAcc) myAcc.textContent = '@' + acc.username;
   document.getElementById('hdr_login_time').textContent = '· دخلت للتو';
   if (acc.biometrics) document.getElementById('hdr_bio_badge').classList.remove('hidden');
   else document.getElementById('hdr_bio_badge').classList.add('hidden');
@@ -2353,11 +2470,13 @@ function bootDashboard() {
   // Reset filter & render
   resetFilter();
   showView('dash');
+  startBalancePolling();
   setTimeout(() => toast('success', 'أهلاً وسهلاً! 👋', 'مرحباً ' + acc.name.split(' ')[0] + ' في أبيكس بنك'), 200);
 }
 
 function doLogout() {
   closeUserMenu();
+  stopBalancePolling();
   sbClearSession();
   clearPersistedState();
   showView('login');
@@ -2528,6 +2647,8 @@ function updateWitHint() {
   if (!session) return;
   const el = document.getElementById('wit_bal_hint');
   if (el) el.innerHTML = amtHTML(session.balance, 'amt-xs');
+  const trEl = document.getElementById('tr_bal_hint');
+  if (trEl) trEl.innerHTML = amtHTML(session.balance, 'amt-xs');
 }
 
 function addTx(type, desc, amount, refundedFromId) {
@@ -2546,9 +2667,10 @@ function addTx(type, desc, amount, refundedFromId) {
   };
   session.nextId++;
   session.transactions.unshift(tx);
-  if (type === 'إيداع')    { session.totalDeposits   += amount; session.depCount++;  }
-  else if (type === 'سحب') { session.totalWithdrawals += amount; session.witCount++;  }
-  else                     { session.totalWithdrawals += amount; session.billCount++; }
+  if (type === 'إيداع')       { session.totalDeposits   += amount; session.depCount++;  }
+  else if (type === 'سحب')    { session.totalWithdrawals += amount; session.witCount++;  }
+  else if (type === 'تحويل')  { session.totalWithdrawals += amount; session.witCount++;  }
+  else                        { session.totalWithdrawals += amount; session.billCount++; }
   updateWitHint();
   renderAll();
 
@@ -2692,6 +2814,206 @@ function doPayBill() {
 }
 
 // ═══════════════════════════════════════════════
+// TRANSFER  (تحويل بين الحسابات)
+// ═══════════════════════════════════════════════
+function copyMyAccount() {
+  const acc = registeredAccount?.username;
+  if (!acc) return;
+  const txt = '@' + acc;
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(txt)
+      .then(() => toast('success', 'تم النسخ ✓', 'رقم حسابك: ' + txt))
+      .catch(() => toast('info', 'رقم حسابك', txt));
+  } else {
+    toast('info', 'رقم حسابك', txt);
+  }
+}
+
+async function openTransferModal() {
+  hideErr('tr_err');
+  let to  = document.getElementById('tr_to').value.trim().toLowerCase().replace(/^@/, '');
+  const amt  = parseFloat(document.getElementById('tr_amt').value);
+  const note = document.getElementById('tr_note').value.trim();
+
+  if (!to)                   return showErr('tr_err', 'أدخل اسم حساب المستفيد.');
+  if (!amt || amt <= 0)      return showErr('tr_err', 'أدخل مبلغاً أكبر من صفر.');
+  if (!isFinite(amt))        return showErr('tr_err', 'مبلغ غير صالح.');
+  if (amt > session.balance) return showErr('tr_err', 'الرصيد غير كافٍ. رصيدك الحالي: ' + fmt(session.balance));
+  if (to === (SB_UID || '').toLowerCase() || to === (registeredAccount?.username || '').toLowerCase())
+    return showErr('tr_err', 'لا يمكنك التحويل إلى نفس حسابك.');
+
+  // التحقق من وجود حساب المستفيد في قاعدة البيانات
+  const btn = document.querySelector('button[onclick="openTransferModal()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'جاري التحقق…'; }
+  try {
+    const rows = await sb.select('users', { username: to });
+    if (!Array.isArray(rows) || rows.length === 0)
+      return showErr('tr_err', 'حساب المستفيد "@' + to + '" غير موجود.');
+    const recName = rows[0].hint || rows[0].username || to;
+
+    pendingTransfer = { to, amt, note, recName };
+    document.getElementById('tm_to').textContent     = recName + ' · @' + to;
+    document.getElementById('tm_amount').textContent = fmt(amt);
+    document.getElementById('tm_note').textContent   = note || '—';
+    document.getElementById('tm_after').textContent  = fmt(session.balance - amt);
+    document.getElementById('transferModal').classList.remove('hidden');
+  } catch(e) {
+    console.error('transfer lookup failed:', e);
+    showErr('tr_err', 'تعذّر التحقق من الحساب: ' + (e.message || 'تحقق من الاتصال.'));
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m4 6H4m0 0l4 4m-4-4l4-4"/></svg> تحويل';
+    }
+  }
+}
+
+function closeTransferModal() {
+  document.getElementById('transferModal').classList.add('hidden');
+  pendingTransfer = null;
+}
+
+async function confirmTransfer() {
+  if (!pendingTransfer) return;
+  const { to, amt, note, recName } = pendingTransfer;
+  // إعادة تحقق نهائي من الرصيد
+  if (amt > session.balance) {
+    closeTransferModal();
+    return toast('warn', 'الرصيد غير كافٍ', 'تغيّر رصيدك. حاول مرة أخرى.');
+  }
+  const btn = document.getElementById('tm_confirm_btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'جاري التحويل…'; }
+
+  const sender = registeredAccount?.username || SB_UID;
+  const desc   = 'تحويل إلى @' + to + (note ? ' — ' + note : '');
+
+  try {
+    // 1) إضافة رصيد المستفيد في السيرفر (نجلب آخر رصيد له)
+    let recBal = 0, recSerial = 0;
+    try {
+      const recTx = await sb.select('apex_transactions', { user_id: to }, 'created_at.desc');
+      if (Array.isArray(recTx) && recTx.length > 0) {
+        recBal    = parseFloat(recTx[0].balance_after) || 0;
+        recSerial = parseInt(recTx[0].serial) || recTx.length;
+      }
+    } catch(e) { console.warn('recipient balance load failed:', e); }
+
+    await sb.insert('apex_transactions', {
+      user_id:       to,
+      type:          'إيداع',
+      description:   'تحويل وارد من @' + sender + (note ? ' — ' + note : ''),
+      note:          'تحويل وارد من @' + sender,
+      amount:        amt,
+      balance_after: recBal + amt,
+      refunded:      false,
+      serial:        recSerial + 1,
+      created_at:    new Date().toISOString(),
+    });
+
+    // 2) خصم المبلغ من المُرسل (addTx يزامن تلقائياً مع السيرفر)
+    addTx('تحويل', desc, amt);
+
+    closeTransferModal();
+    document.getElementById('tr_to').value   = '';
+    document.getElementById('tr_amt').value  = '';
+    document.getElementById('tr_note').value = '';
+    toast('success', 'تم التحويل بنجاح ✓', fmt(amt) + ' أُرسلت إلى @' + to);
+  } catch(e) {
+    console.error('transfer failed:', e);
+    closeTransferModal();
+    toast('warn', 'فشل التحويل', 'لم يتم إتمام العملية: ' + (e.message || 'تحقق من الاتصال.'));
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> تأكيد التحويل';
+    }
+  }
+}
+
+document.getElementById('transferModal')?.addEventListener('click', e => {
+  if (e.target === document.getElementById('transferModal')) closeTransferModal();
+});
+
+// ═══════════════════════════════════════════════
+// REFRESH FROM SERVER  (يجلب المعاملات الجديدة مثل التحويلات الواردة)
+// ═══════════════════════════════════════════════
+let refreshing = false;
+async function refreshFromServer(silent = true) {
+  if (!SB_UID || !session || refreshing) return;
+  // لا نحدّث إذا كانت هناك معاملة محلية لم تُحفظ بعد (لتجنب اختفائها)
+  if (session.transactions.some(t => String(t.id).startsWith('loc_'))) return;
+
+  refreshing = true;
+  const icon = document.getElementById('refreshIcon');
+  if (!silent && icon) icon.classList.add('spin-anim');
+
+  try {
+    const txRows = await sb.select('apex_transactions', { user_id: SB_UID }, 'created_at.desc');
+    const txList = (Array.isArray(txRows) ? txRows : []).map((r, i) => ({
+      id:             r.id,
+      serial:         r.serial || (i + 1),
+      type:           r.type,
+      desc:           r.description || r.note || '',
+      amount:         parseFloat(r.amount) || 0,
+      balance:        parseFloat(r.balance_after) || 0,
+      date:           r.created_at,
+      refunded:       !!r.refunded,
+      refundedFromId: r.refunded_from_id || null,
+    }));
+
+    const oldCount = session.transactions.length;
+    const oldBal   = session.balance;
+
+    let depCount = 0, witCount = 0, billCount = 0;
+    txList.forEach(tx => {
+      if (!tx.refundedFromId) {
+        if (tx.type === 'إيداع') depCount++;
+        else if (tx.type === 'سحب' || tx.type === 'تحويل') witCount++;
+        else billCount++;
+      }
+    });
+
+    session.balance          = txList.length > 0 ? txList[0].balance : 0;
+    session.totalDeposits    = txList.filter(t => t.type === 'إيداع' && !t.refundedFromId).reduce((s, t) => s + t.amount, 0);
+    session.totalWithdrawals = txList.filter(t => t.type !== 'إيداع' && !t.refunded).reduce((s, t) => s + t.amount, 0);
+    session.depCount  = depCount;
+    session.witCount  = witCount;
+    session.billCount = billCount;
+    session.transactions = txList;
+    session.nextId     = txList.length > 0 ? Math.max(...txList.map(t => (typeof t.id === 'number' ? t.id : 0))) + 1 : 1;
+    session.nextSerial = txList.length + 1;
+
+    renderAll();
+    updateWitHint();
+
+    const gotNew = txList.length > oldCount || session.balance > oldBal;
+    if (!silent) {
+      if (gotNew) toast('success', 'تم التحديث ✓', 'وصلتك عملية جديدة');
+      else        toast('info', 'حسابك مُحدَّث', 'لا توجد عمليات جديدة');
+    } else if (gotNew) {
+      const diff = session.balance - oldBal;
+      toast('success', 'وصلك مبلغ جديد 💰', diff > 0 ? '+' + fmt(diff) : 'تم تحديث حسابك');
+    }
+  } catch (e) {
+    console.warn('refresh failed:', e);
+    if (!silent) toast('warn', 'تعذّر التحديث', e.message || 'تحقق من الاتصال.');
+  } finally {
+    refreshing = false;
+    if (icon) icon.classList.remove('spin-anim');
+  }
+}
+
+// ── التحديث التلقائي كل ٢٠ ثانية أثناء فتح لوحة التحكم ──
+let balancePollTimer = null;
+function startBalancePolling() {
+  stopBalancePolling();
+  balancePollTimer = setInterval(() => refreshFromServer(true), 20000);
+}
+function stopBalancePolling() {
+  if (balancePollTimer) { clearInterval(balancePollTimer); balancePollTimer = null; }
+}
+
+// ═══════════════════════════════════════════════
 // FILTERING
 // ═══════════════════════════════════════════════
 function quickFilter() {
@@ -2821,13 +3143,18 @@ function renderAll() {
       arrowBg:'rgba(244,63,94,.1)', arrowColor:'#f43f5e',
       svg:'<path stroke-linecap="round" stroke-linejoin="round" d="M17 13l-5 5m0 0l-5-5m5 5V6"/>',
     },
+    'تحويل': {
+      bg:'rgba(59,127,245,.14)', border:'rgba(59,127,245,.25)',
+      arrowBg:'rgba(59,127,245,.1)', arrowColor:'#3b7ff5',
+      svg:'<path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m4 6H4m0 0l4 4m-4-4l4-4"/>',
+    },
     'فاتورة': {
       bg:'rgba(250,204,21,.12)', border:'rgba(250,204,21,.2)',
       arrowBg:'rgba(250,204,21,.08)', arrowColor:'#facc15',
       svg:'<path stroke-linecap="round" stroke-linejoin="round" d="M9 14H5l7-14 7 14h-4M9 14l3 7 3-7M9 14h6"/>',
     },
   };
-  const TX_COLOR = { 'إيداع':'#10c98a', 'سحب':'#f43f5e', 'فاتورة':'#facc15' };
+  const TX_COLOR = { 'إيداع':'#10c98a', 'سحب':'#f43f5e', 'تحويل':'#3b7ff5', 'فاتورة':'#facc15' };
 
   /* render each date group */
   Object.keys(groups).forEach((dateKey, gi) => {
@@ -3374,6 +3701,10 @@ document.getElementById('witModal').addEventListener('click', e=>{ if(e.target==
       cardDetailsVisible = false;
       renderCardDetails(); renderMyCards();
       updateWitHint(); updateUserMenuBioState(); resetFilter();
+      const _my1 = document.getElementById('tr_myaccount');
+      if (_my1) _my1.textContent = '@' + acc.username;
+      startBalancePolling();
+      refreshFromServer(true);
       toast('info', 'مرحباً بعودتك 👋', acc.name.split(' ')[0]);
       return;
     }
@@ -3405,6 +3736,10 @@ document.getElementById('witModal').addEventListener('click', e=>{ if(e.target==
       cardDetailsVisible = false;
       renderCardDetails(); renderMyCards();
       updateWitHint(); updateUserMenuBioState(); resetFilter();
+      const _my2 = document.getElementById('tr_myaccount');
+      if (_my2) _my2.textContent = '@' + acc.username;
+      startBalancePolling();
+      refreshFromServer(true);
       toast('info', 'تم استعادة الجلسة', 'مرحباً بعودتك، ' + acc.name.split(' ')[0]);
     } else {
       showView('login');
