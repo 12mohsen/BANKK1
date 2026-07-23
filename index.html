@@ -186,6 +186,13 @@ select.inp option{background:#0c1526;color:#e2e8f0}
   background:rgba(90,112,153,.1);border:1px solid rgba(90,112,153,.2);
   flex-shrink:0;
 }
+.tx-expired-tag{
+  display:inline-flex;align-items:center;gap:.25rem;
+  font-size:.66rem;font-weight:700;color:#4a5a75;
+  padding:.28rem .6rem;border-radius:9999px;
+  background:rgba(71,85,105,.12);border:1px solid rgba(71,85,105,.22);
+  cursor:not-allowed;flex-shrink:0;opacity:.85;
+}
 /* date group fade-in */
 .tx-group{animation:fadeUp .3s ease both}
 
@@ -1287,6 +1294,22 @@ select.inp option{background:#0c1526;color:#e2e8f0}
         <span class="text-xs text-slate-400 font-600">الرصيد بعد الاسترجاع</span>
         <span id="rm_after" class="text-sm font-700 text-jade-400"></span>
       </div>
+    </div>
+
+    <!-- PIN required when the transaction is older than a month -->
+    <div id="rm_pin_wrap" class="hidden mb-5">
+      <div class="rounded-xl px-4 py-3 mb-3 flex items-start gap-2" style="border:1px solid rgba(250,204,21,.25);background:rgba(202,138,4,.08)">
+        <svg class="w-4 h-4 text-gold-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <p class="text-xs text-gold-300 font-600 leading-relaxed">مرّ أكثر من شهر على هذه العملية. لتأكيد الاسترجاع، أدخل الرقم السري (كلمة السر) الخاص بحسابك.</p>
+      </div>
+      <label class="block text-xs font-700 text-slate-400 mb-1.5 tracking-wider">الرقم السري</label>
+      <div class="relative">
+        <input id="rm_pin" type="password" placeholder="••••••••" class="inp" style="padding-left:2.8rem" onkeydown="if(event.key==='Enter')confirmRefund()"/>
+        <button type="button" onclick="togglePass('rm_pin',this)" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors p-0.5">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+        </button>
+      </div>
+      <div id="rm_pin_err" class="hidden mt-2 text-xs text-crim-300 text-center font-600"></div>
     </div>
 
     <p class="text-xs text-slate-600 font-500 mb-5 leading-relaxed">سيتم تسجيل عملية إيداع جديدة بقيمة المبلغ المسترجَع، ولا يمكن التراجع عن هذا الإجراء.</p>
@@ -2709,6 +2732,8 @@ function addTx(type, desc, amount, refundedFromId) {
 // REFUND  (استرجاع المبلغ) — withdrawals & bills only
 // ═══════════════════════════════════════════════
 let pendingRefundTxId = null;
+let refundNeedsPin    = false;
+const REFUND_PIN_MS   = 30 * 24 * 60 * 60 * 1000; // شهر
 
 function openRefundModal(txId) {
   // البحث بـ id سواء كان رقماً أو localId نصي
@@ -2728,21 +2753,53 @@ function openRefundModal(txId) {
     return;
   }
   pendingRefundTxId = txId;
+  // هل مرّ أكثر من شهر على العملية؟ → يتطلب الرقم السري
+  refundNeedsPin = (Date.now() - new Date(tx.date).getTime()) > REFUND_PIN_MS;
+  const pinWrap = document.getElementById('rm_pin_wrap');
+  const pinInp  = document.getElementById('rm_pin');
+  if (pinInp) pinInp.value = '';
+  hideErr('rm_pin_err');
+  if (pinWrap) pinWrap.classList.toggle('hidden', !refundNeedsPin);
+
   document.getElementById('rm_desc').textContent   = tx.desc;
   document.getElementById('rm_amount').textContent = fmt(tx.amount);
   document.getElementById('rm_after').textContent  = fmt(session.balance + tx.amount);
   document.getElementById('refundModal').classList.remove('hidden');
+  if (refundNeedsPin && pinInp) setTimeout(() => pinInp.focus(), 100);
 }
 
 function closeRefundModal() {
   document.getElementById('refundModal').classList.add('hidden');
   pendingRefundTxId = null;
+  refundNeedsPin = false;
+  const pinInp = document.getElementById('rm_pin');
+  if (pinInp) pinInp.value = '';
+  hideErr('rm_pin_err');
 }
 
-function confirmRefund() {
+async function confirmRefund() {
   if (pendingRefundTxId == null) return;
   const tx = session.transactions.find(t => String(t.id) === String(pendingRefundTxId));
   if (!tx || tx.refunded) { closeRefundModal(); return; }
+
+  // ── التحقق من الرقم السري إذا مرّ أكثر من شهر ──
+  if (refundNeedsPin) {
+    const pin = (document.getElementById('rm_pin').value || '');
+    if (!pin) return showErr('rm_pin_err', 'أدخل الرقم السري لتأكيد الاسترجاع.');
+    const btn = document.querySelector('#refundModal button[onclick="confirmRefund()"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'جاري التحقق…'; }
+    try {
+      const ok = await verifyPassword(pin);
+      if (!ok) return showErr('rm_pin_err', 'الرقم السري غير صحيح.');
+    } catch(e) {
+      return showErr('rm_pin_err', 'تعذّر التحقق: ' + (e.message || 'تحقق من الاتصال.'));
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg> تأكيد الاسترجاع';
+      }
+    }
+  }
 
   tx.refunded = true;
 
@@ -2755,6 +2812,21 @@ function confirmRefund() {
   addTx('إيداع', 'استرجاع: ' + tx.desc, tx.amount, tx.id);
   closeRefundModal();
   toast('success', 'تم استرجاع المبلغ ✓', fmt(tx.amount) + ' أُعيدت إلى رصيدك');
+}
+
+/** تحقق من كلمة السر: يقارن مع pass_hash في Supabase (أو المحلي احتياطياً) */
+async function verifyPassword(plain) {
+  const inputHash = await hashPass(plain);
+  // 1) المقارنة مع السيرفر (المصدر الموثوق)
+  try {
+    const rows = await sb.select('users', { username: SB_UID });
+    if (Array.isArray(rows) && rows.length > 0 && rows[0].pass_hash)
+      return rows[0].pass_hash === inputHash;
+  } catch(e) { /* fallback below */ }
+  // 2) احتياطي محلي إذا تعذّر الوصول للسيرفر
+  if (registeredAccount?.password)
+    return registeredAccount.password === plain;
+  throw new Error('لا يمكن التحقق حالياً');
 }
 
 document.getElementById('refundModal')?.addEventListener('click', e => {
