@@ -1501,57 +1501,66 @@ let rememberMeChecked = false; // "البقاء متصلاً" — يتخطى ش�
 // ═══════════════════════════════════════════════
 const SB_URL = 'https://tvbuvwjkojhqcxhyehfs.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2YnV2d2prb2pocWN4aHllaGZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDE4MTUsImV4cCI6MjA5MjI3NzgxNX0.egwryYwKu_Bicl_koaYXaKGBoxz42c6k4VkMD9aZSWQ';
-let SB_TOKEN = SB_KEY; // نستخدم anon key مباشرة (لا Supabase Auth)
-let SB_UID   = null;   // user_id من جدول users
+let SB_UID   = null;   // اسم المستخدم من جدول users
+
+// ── توكن الجلسة: هو وحده ما يُثبت الهوية لكل عملية بيانات ──
+//    المفتاح العام أعلاه لم يعد يمنح أي وصول للجداول بعد ملف 09
+const SB_TOKEN_KEY = 'apex_session_token';
+let SB_TOKEN = null;
+
+function setSessionToken(t) {
+  SB_TOKEN = t || null;
+  try {
+    if (t) localStorage.setItem(SB_TOKEN_KEY, t);
+    else   localStorage.removeItem(SB_TOKEN_KEY);
+  } catch(e) { /* وضع التصفح الخاص */ }
+}
+function getSessionToken() {
+  if (!SB_TOKEN) { try { SB_TOKEN = localStorage.getItem(SB_TOKEN_KEY); } catch(e) {} }
+  return SB_TOKEN || '';
+}
 
 const sbH = () => ({
   'apikey':        SB_KEY,
   'Authorization': `Bearer ${SB_KEY}`,
   'Content-Type':  'application/json',
-  'Prefer':        'return=representation',
 });
 
-/** تشفير كلمة المرور — SHA-256 بسيط كـ hex string */
+/** تجزئة SHA-256 — لم تعد تُستخدم في المصادقة (bcrypt داخل القاعدة)،
+ *  مُبقاة لأي كود قديم قد يستدعيها */
 async function hashPass(password) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-// ── REST helpers ────────────────────────────────
-const sb = {
-  async select(table, match={}, order=null) {
-    let url = `${SB_URL}/rest/v1/${table}?select=*`;
-    Object.entries(match).forEach(([k,v]) => { url += `&${k}=eq.${encodeURIComponent(v)}`; });
-    if (order) url += `&order=${order}`;
-    const r = await fetch(url, { headers: sbH() });
-    if (!r.ok) { const e = await r.text(); throw new Error(e); }
-    return r.json();
-  },
-  async insert(table, data) {
-    const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
-      method: 'POST', headers: sbH(),
-      body: JSON.stringify(data)
-    });
-    if (!r.ok) { const e = await r.text(); throw new Error(e); }
-    return r.json();
-  },
-  async update(table, match, data) {
-    let url = `${SB_URL}/rest/v1/${table}?`;
-    Object.entries(match).forEach(([k,v]) => { url += `${k}=eq.${encodeURIComponent(v)}&`; });
-    const r = await fetch(url, {
-      method: 'PATCH', headers: sbH(),
-      body: JSON.stringify(data)
-    });
-    if (!r.ok) { const e = await r.text(); throw new Error(e); }
-    return r.json();
-  },
-  async delete(table, match) {
-    let url = `${SB_URL}/rest/v1/${table}?`;
-    Object.entries(match).forEach(([k,v]) => { url += `${k}=eq.${encodeURIComponent(v)}&`; });
-    const r = await fetch(url, { method: 'DELETE', headers: sbH() });
-    if (!r.ok) { const e = await r.text(); throw new Error(e); }
-  },
-};
+// ── RPC helpers ─────────────────────────────────
+//    لا وصول مباشر لأي جدول. كل شيء عبر دوال security definer
+//    في ملف 08_bank_rpc.sql و 01_auth_rpc.sql.
+
+/** استدعاء دالة في القاعدة. يرفع Error برسالة القاعدة عند الفشل. */
+async function rpc(fn, args = {}) {
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST', headers: sbH(), body: JSON.stringify(args),
+  });
+  const txt = await r.text();
+  let data = null;
+  try { data = txt ? JSON.parse(txt) : null; } catch(e) { data = txt; }
+  if (!r.ok) {
+    const msg = (data && (data.message || data.hint)) || txt || ('HTTP ' + r.status);
+    if (/unauthorized|28000|permission denied|JWT/i.test(msg)) {
+      setSessionToken(null); SB_UID = null;
+    }
+    throw new Error(msg);
+  }
+  return data;
+}
+
+/** استدعاء يتطلب جلسة — يمرّر التوكن ولا يثق بأي user_id من المتصفح. */
+function rpcAuth(fn, args = {}) {
+  const token = getSessionToken();
+  if (!token) return Promise.reject(new Error('انتهت الجلسة — سجّل الدخول من جديد.'));
+  return rpc(fn, Object.assign({ p_token: token }, args));
+}
 
 // ── Session helpers (localStorage) ──────────────
 function sbSaveSession(userId, username) {
@@ -1563,6 +1572,9 @@ function sbSaveSession(userId, username) {
   }));
 }
 function sbClearSession() {
+  const t = getSessionToken();
+  if (t) rpc('app_logout', { p_token: t }).catch(() => {});  // إبطال التوكن في القاعدة
+  setSessionToken(null);
   SB_UID = null;
   localStorage.removeItem('apex_sb_token');
   localStorage.removeItem('apex_last_user');
@@ -1571,6 +1583,7 @@ async function sb_getSession() {
   try {
     const raw = localStorage.getItem('apex_sb_token');
     if (!raw) return null;
+    if (!getSessionToken()) return null;   // بلا توكن خادم لا توجد جلسة
     const d = JSON.parse(raw);
     // صالحة لمدة 30 يوم
     if (Date.now() - (d.saved_at||0) > 30*24*60*60*1000) {
@@ -2022,17 +2035,17 @@ function submitAddCard() {
   };
   registeredAccount.manualCards.push(newCard);
 
-  // مزامنة مع Supabase — cards.user_id = text = username
+  // مزامنة عبر دالة محمية — الخادم يحدد صاحب البطاقة من التوكن
   if (SB_UID) {
-    sb.insert('apex_cards', {
-      user_id:   SB_UID,   // اسم المستخدم النصي (mohsen)
+    rpcAuth('bank_add_card', { p_item: {
       card_name: name,
       number, cvv, expiry,
-      last4:     newCard.last4,
+      last4: newCard.last4,
       brand,
-    }).then(res => {
-      if (res?.[0]?.id) newCard.id = res[0].id;
-    }).catch(e => console.warn('card insert failed:', e));
+    }}).then(res => {
+      if (res?.ok && res.id) { newCard.id = res.id; renderMyCards(); }
+      else if (res && res.ok === false) toast('warn', 'لم تُحفظ البطاقة في السيرفر', res.error || '');
+    }).catch(e => toast('warn', 'لم تُحفظ البطاقة في السيرفر', e.message || ''));
   }
 
   closeAddCardModal();
@@ -2080,13 +2093,10 @@ function confirmDeleteManualCard(cardId) {
   if (!registeredAccount?.manualCards) return;
   registeredAccount.manualCards = registeredAccount.manualCards.filter(c => c.id !== cardId);
 
-  // حذف نهائي من Supabase
+  // حذف نهائي عبر دالة محمية — مقصورة على حساب صاحب الجلسة
   if (SB_UID) {
-    const url = `${SB_URL}/rest/v1/apex_cards?id=eq.${encodeURIComponent(cardId)}&user_id=eq.${encodeURIComponent(SB_UID)}`;
-    fetch(url, {
-      method: 'DELETE',
-      headers: sbH(),
-    }).catch(e => console.warn('card delete failed:', e));
+    rpcAuth('bank_delete_card', { p_id: String(cardId) })
+      .catch(e => toast('warn', 'لم تُحذف البطاقة من السيرفر', e.message || ''));
   }
 
   renderMyCards();
@@ -2211,27 +2221,24 @@ async function createAccount() {
   if (createBtn) { createBtn.disabled = true; createBtn.textContent = 'جاري الإنشاء…'; }
 
   try {
-    // 1) التحقق من عدم تكرار اسم المستخدم في جدول users
-    const existing = await sb.select('users', { username: user });
-    if (Array.isArray(existing) && existing.length > 0)
-      return showErr('su_err', 'اسم المستخدم "' + user + '" مستخدم بالفعل. اختر اسماً آخر.');
-
-    // 2) user_id = اسم المستخدم النصي مباشرة (بدون UUID)
-    const uid = user;  // mohsen → user_id = "mohsen"
-
-    // 3) تشفير كلمة المرور
-    const passHash = await hashPass(pass);
-
-    // 4) حفظ في جدول users (user_id = username = نص)
-    await sb.insert('users', {
-      user_id:      uid,
-      username:     user,
-      pass_hash:    passHash,
-      hint:         user,
-      created_from: 'apexbank',
+    // 1) إنشاء الحساب داخل القاعدة — كلمة المرور تُجزّأ بـ bcrypt هناك
+    //    hint يحمل الاسم الكامل (وهو ما يتوقعه جلب الاسم لاحقاً)،
+    //    ولم يعد اسم المستخدم حتى لا يصلح مفتاحاً لإعادة التعيين
+    const sres = await rpc('app_signup', {
+      p_user:   user,
+      p_pass:   pass,
+      p_hint:   name,
+      p_origin: 'apexbank',
     });
+    if (!sres || sres.ok !== true) {
+      if (sres?.taken)
+        return showErr('su_err', 'اسم المستخدم "' + user + '" مستخدم بالفعل. اختر اسماً آخر.');
+      return showErr('su_err', 'تعذّر إنشاء الحساب: ' + (sres?.error || 'تحقق من الاتصال.'));
+    }
 
-    // SB_UID = اسم المستخدم النصي
+    // 2) التوكن هو هوية الجلسة من الآن فصاعداً
+    setSessionToken(sres.token);
+    const uid = user;
     SB_UID = uid;
 
     // 5) تجهيز بيانات البنك محلياً
@@ -2249,28 +2256,26 @@ async function createAccount() {
       transactions: [], nextId: 1, nextSerial: 1,
     };
 
-    // 6) حفظ المعاملة الأولى في transactions (user_id = username)
+    // 6) حفظ المعاملة الأولى — الخادم يحسب الرصيد والتسلسل
     if (dep > 0) {
       try {
-        const txRes = await sb.insert('apex_transactions', {
-          user_id:       uid,
-          type:          'إيداع',
-          description:   'إيداع فتح الحساب',
-          note:          'إيداع فتح الحساب',
-          amount:        dep,
-          balance_after: dep,
-          refunded:      false,
-          serial:        1,
-          created_at:    now,
-        });
-        const txId = Array.isArray(txRes) ? txRes[0]?.id : 1;
+        const txRes = await rpcAuth('bank_add_tx', { p_item: {
+          type:        'إيداع',
+          description: 'إيداع فتح الحساب',
+          amount:      dep,
+        }});
+        if (!txRes || txRes.ok !== true) throw new Error(txRes?.error || 'rejected');
+        const txId  = txRes.id;
+        const svBal = parseFloat(txRes.balance_after);
         session.transactions = [{
-          id: txId || 1, serial: 1, type: 'إيداع',
-          desc: 'إيداع فتح الحساب', amount: dep, balance: dep,
+          id: txId || 1, serial: txRes.serial || 1, type: 'إيداع',
+          desc: 'إيداع فتح الحساب', amount: dep,
+          balance: isFinite(svBal) ? svBal : dep,
           date: now, refunded: false, refundedFromId: null,
         }];
-        session.nextId     = (txId || 1) + 1;
-        session.nextSerial = 2;
+        if (isFinite(svBal)) session.balance = svBal;
+        session.nextId     = (typeof txId === 'number' ? txId : 0) + 1;
+        session.nextSerial = (txRes.serial || 1) + 1;
       } catch(e) {
         console.error('init tx failed:', e.message);
         toast('warn','لم تُحفظ المعاملة الأولى', e.message || '');
@@ -2314,7 +2319,7 @@ async function sbLoadUserData(username, password, uuid) {
   // جلب المعاملات (transactions.user_id = text = username)
   let txList = [];
   try {
-    const txRows = await sb.select('apex_transactions', { user_id: uid }, 'created_at.desc');
+    const txRows = await rpcAuth('bank_fetch_tx');
     txList = (Array.isArray(txRows) ? txRows : []).map((r, i) => ({
       id:             r.id,
       serial:         r.serial || (i + 1),
@@ -2331,9 +2336,7 @@ async function sbLoadUserData(username, password, uuid) {
   // جلب البطاقات (cards.user_id = text = username)
   let manualCards = [];
   try {
-    const _cUrl = `${SB_URL}/rest/v1/apex_cards?select=*&user_id=eq.${encodeURIComponent(uid)}&order=created_at.asc`;
-    const _cRes = await fetch(_cUrl, { headers: sbH() });
-    const cRows = _cRes.ok ? await _cRes.json() : [];
+    const cRows = await rpcAuth('bank_fetch_cards');
     manualCards = (Array.isArray(cRows) ? cRows : []).map(r => ({
       id:      r.id,
       name:    r.card_name || '',
@@ -2354,20 +2357,17 @@ async function sbLoadUserData(username, password, uuid) {
     cardData = snap?.account?.card || generateCardData();
   } catch(e) { cardData = generateCardData(); }
 
-  // الرصيد من آخر معاملة
-  const balance = txList.length > 0 ? txList[0].balance : 0;
+  // الرصيد من آخر معاملة — ثم يُصحَّح من القاعدة أدناه إن أمكن
+  let balance = txList.length > 0 ? txList[0].balance : 0;
 
-  // جلب الاسم الكامل من جدول users
+  // الاسم المعروض والرصيد المعتمد — من دالة محمية، بلا قراءة جدول users
   let fullName = username;
   try {
-    const uRows = await sb.select('users', { username: uid });
-    if (Array.isArray(uRows) && uRows.length > 0)
-      fullName = uRows[0].hint || uRows[0].username || username;
-    // إذا كان hint = username، نجرب users.user_id = uid
-    if (fullName === username) {
-      const uRows2 = await sb.select('users', { user_id: uid });
-      if (Array.isArray(uRows2) && uRows2.length > 0 && uRows2[0].hint)
-        fullName = uRows2[0].hint;
+    const prof = await rpcAuth('bank_profile');
+    if (prof?.ok) {
+      fullName = prof.name || username;
+      const b = parseFloat(prof.balance);
+      if (isFinite(b)) balance = b;   // ★ القاعدة هي مرجع الرصيد
     }
   } catch(e) {}
 
@@ -2415,18 +2415,22 @@ async function doLogin() {
   hideErr('li_err');
 
   try {
-    // 1) البحث بـ username (وليس user_id لأن user_id أصبح UUID)
-    const rows = await sb.select('users', { username: user });
-    const userRow = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
-    if (!userRow) return showErr('li_err','اسم المستخدم غير موجود.');
-
-    // 2) التحقق من كلمة المرور
-    const inputHash = await hashPass(pass);
-    if (userRow.pass_hash !== inputHash)
+    // 1) الدخول عبر دالة محمية — المقارنة داخل الخادم، ولا يُقرأ أي هاش هنا
+    //    (الهاش القديم SHA-256 يُرقّى إلى bcrypt تلقائياً عند أول دخول ناجح)
+    const lres = await rpc('app_login', {
+      p_user:   user,
+      p_pass:   pass,
+      p_origin: 'apexbank',
+    });
+    if (!lres || lres.ok !== true) {
+      if (lres?.locked)           return showErr('li_err','أُوقف الحساب مؤقتاً بعد محاولات فاشلة متكررة. أعد المحاولة بعد ١٥ دقيقة.');
+      if (lres?.exists === false) return showErr('li_err','اسم المستخدم غير موجود.');
       return showErr('li_err','كلمة المرور غير صحيحة.');
+    }
 
-    // 3) user_id = اسم المستخدم النصي (mohsen)
-    const uid = user;  // نستخدم username مباشرة
+    // 2) التوكن هو هوية الجلسة
+    setSessionToken(lres.token);
+    const uid = user;
     SB_UID = uid;
     sbSaveSession(uid, user);
     localStorage.setItem('apex_last_user', user);
@@ -2448,7 +2452,15 @@ async function doLogin() {
 async function doBioLogin() {
   const stored = await sb_getSession();
   if (!stored) return showErr('li_err','انتهت جلستك. سجّل الدخول مرة أخرى.');
-  SB_UID = stored.user_id; // UUID
+
+  // التوكن هو ما يُثبت الهوية — نتحقق منه في القاعدة قبل عرض أي بيانات
+  let who = null;
+  try { who = await rpcAuth('bank_profile'); } catch(e) {}
+  if (!who?.ok) {
+    sbClearSession();
+    return showErr('li_err','انتهت جلستك. سجّل الدخول مرة أخرى.');
+  }
+  SB_UID = who.user_id || stored.user_id;
 
   const localOk = restoreState();
   if (localOk === 'dash' && session && registeredAccount) {
@@ -2627,23 +2639,21 @@ async function submitChangePassword() {
   if (next !== confirm) return showErr('pm_err', 'كلمتا السر الجديدتان غير متطابقتين.');
 
   try {
-    // التحقق من كلمة السر الحالية
-    const currentHash = await hashPass(current);
-    const rows = await sb.select('users', { username: registeredAccount.username });
-    const userRow = Array.isArray(rows) && rows[0];
-    if (!userRow || userRow.pass_hash !== currentHash)
-      return showErr('pm_err', 'كلمة السر الحالية غير صحيحة.');
-
-    // تحديث pass_hash — user_id = username النصي
-    const newHash = await hashPass(next);
-    await sb.update('users', { user_id: registeredAccount.username }, { pass_hash: newHash });
+    // التغيير كله داخل الخادم: يتحقق من الحالية ويُجزّئ الجديدة بـ bcrypt
+    // ويُبطل بقية الجلسات ويُبقي جلستك الحالية
+    const res = await rpcAuth('app_change_password', { p_old: current, p_new: next });
+    if (!res || res.ok !== true) {
+      if (res?.error === 'wrong_old_password')
+        return showErr('pm_err', 'كلمة السر الحالية غير صحيحة.');
+      return showErr('pm_err', 'تعذّر تحديث كلمة السر: ' + (res?.error || 'تحقق من الاتصال.'));
+    }
 
     registeredAccount.password = next;
     closePassModal();
     persistState();
     toast('success', 'تم تحديث كلمة السر ✓', 'يمكنك استخدام كلمة السر الجديدة في تسجيل الدخول القادم');
   } catch(e) {
-    showErr('pm_err', 'تعذّر تحديث كلمة السر. تحقق من الاتصال.');
+    showErr('pm_err', 'تعذّر تحديث كلمة السر: ' + (e.message || 'تحقق من الاتصال.'));
   }
 }
 
@@ -2674,6 +2684,27 @@ function updateWitHint() {
   if (trEl) trEl.innerHTML = amtHTML(session.balance, 'amt-xs');
 }
 
+/** تراجع عن معاملة لم يقبلها الخادم — يُعيد الرصيد والعدادات كما كانت */
+function revertTx(tx, err, res) {
+  const i = session.transactions.findIndex(t => t === tx);
+  if (i !== -1) session.transactions.splice(i, 1);
+
+  session.balance -= (tx.type === 'إيداع') ? tx.amount : -tx.amount;
+  if (tx.type === 'إيداع')       { session.totalDeposits    -= tx.amount; session.depCount--;  }
+  else if (tx.type === 'سحب')    { session.totalWithdrawals -= tx.amount; session.witCount--;  }
+  else if (tx.type === 'تحويل')  { session.totalWithdrawals -= tx.amount; session.witCount--;  }
+  else                           { session.totalWithdrawals -= tx.amount; session.billCount--; }
+
+  updateWitHint();
+  renderAll();
+  persistState();
+
+  const msg = (err === 'insufficient_funds')
+    ? 'الرصيد غير كافٍ. رصيدك لدى الخادم: ' + fmt(parseFloat(res?.balance) || 0)
+    : (err || 'تحقق من الاتصال.');
+  toast('warn', 'لم تُنفَّذ العملية', msg);
+}
+
 function addTx(type, desc, amount, refundedFromId) {
   session.balance += (type === 'إيداع') ? amount : -amount;
   const now = new Date().toISOString();
@@ -2697,30 +2728,28 @@ function addTx(type, desc, amount, refundedFromId) {
   updateWitHint();
   renderAll();
 
-  // ── مزامنة مع Supabase ──
+  // ── مزامنة عبر دالة محمية ──
+  //    الخادم يحسب balance_after و serial ويرفض ما لا يغطيه الرصيد،
+  //    وعند الرفض نتراجع محلياً بدل إبقاء رقم وهمي على الشاشة
   if (SB_UID) {
     (async () => {
       try {
-        const res = await sb.insert('apex_transactions', {
-          user_id:          SB_UID,
-          serial:           tx.serial,
+        const res = await rpcAuth('bank_add_tx', { p_item: {
           type:             tx.type,
           description:      tx.desc,
-          note:             tx.desc,
           amount:           tx.amount,
-          balance_after:    tx.balance,
-          refunded:         false,
           refunded_from_id: refundedFromId || null,
-          created_at:       now,
-        });
-        // بعد رجوع الـ ID الحقيقي — حدّث tx.id وأعد الـ render
-        if (res?.[0]?.id) {
-          tx.id = res[0].id;
-          renderAll(); // إعادة رسم لتحديث زر الاسترجاع بالـ ID الصحيح
-        }
+        }});
+        if (!res || res.ok !== true) { revertTx(tx, res?.error, res); return; }
+        tx.id     = res.id;
+        tx.serial = res.serial || tx.serial;
+        const svBal = parseFloat(res.balance_after);
+        if (isFinite(svBal)) { tx.balance = svBal; session.balance = svBal; }
+        session.nextSerial = (res.serial || tx.serial) + 1;
+        updateWitHint();
+        renderAll();   // لتحديث زر الاسترجاع بالمعرّف الصحيح
       } catch(e) {
-        console.error('❌ addTx insert failed:', e.message || e);
-        toast('warn', 'لم تُحفظ المعاملة في السيرفر', e.message || '');
+        revertTx(tx, e.message || '');
       }
     })();
   }
@@ -2803,10 +2832,10 @@ async function confirmRefund() {
 
   tx.refunded = true;
 
-  // مزامنة حالة الاسترجاع مع Supabase
+  // مزامنة حالة الاسترجاع عبر دالة محمية — مقصورة على حساب صاحب الجلسة
   if (SB_UID) {
-    sb.update('apex_transactions', { id: tx.id }, { refunded: true })
-      .catch(e => console.warn('refund sync failed:', e));
+    rpcAuth('bank_set_refunded', { p_id: String(tx.id) })
+      .catch(e => toast('warn', 'لم تُحدَّث حالة الاسترجاع', e.message || ''));
   }
 
   addTx('إيداع', 'استرجاع: ' + tx.desc, tx.amount, tx.id);
@@ -2816,12 +2845,10 @@ async function confirmRefund() {
 
 /** تحقق من كلمة السر: يقارن مع pass_hash في Supabase (أو المحلي احتياطياً) */
 async function verifyPassword(plain) {
-  const inputHash = await hashPass(plain);
-  // 1) المقارنة مع السيرفر (المصدر الموثوق)
+  // 1) المقارنة داخل الخادم — لا يُقرأ pass_hash في المتصفح أبداً
   try {
-    const rows = await sb.select('users', { username: SB_UID });
-    if (Array.isArray(rows) && rows.length > 0 && rows[0].pass_hash)
-      return rows[0].pass_hash === inputHash;
+    const res = await rpcAuth('bank_verify_password', { p_pass: plain });
+    if (res && typeof res.ok === 'boolean') return res.ok;
   } catch(e) { /* fallback below */ }
   // 2) احتياطي محلي إذا تعذّر الوصول للسيرفر
   if (registeredAccount?.password)
@@ -2918,10 +2945,13 @@ async function openTransferModal() {
   const btn = document.querySelector('button[onclick="openTransferModal()"]');
   if (btn) { btn.disabled = true; btn.textContent = 'جاري التحقق…'; }
   try {
-    const rows = await sb.select('users', { username: to });
-    if (!Array.isArray(rows) || rows.length === 0)
+    const found = await rpcAuth('bank_lookup_user', { p_user: to });
+    if (!found?.exists)
       return showErr('tr_err', 'حساب المستفيد "@' + to + '" غير موجود.');
-    const recName = rows[0].hint || rows[0].username || to;
+    if (found.self)
+      return showErr('tr_err', 'لا يمكنك التحويل إلى نفس حسابك.');
+    to = found.user_id || to;
+    const recName = found.name || to;
 
     pendingTransfer = { to, amt, note, recName };
     document.getElementById('tm_to').textContent     = recName + ' · @' + to;
@@ -2956,34 +2986,42 @@ async function confirmTransfer() {
   const btn = document.getElementById('tm_confirm_btn');
   if (btn) { btn.disabled = true; btn.textContent = 'جاري التحويل…'; }
 
-  const sender = registeredAccount?.username || SB_UID;
-  const desc   = 'تحويل إلى @' + to + (note ? ' — ' + note : '');
+  const desc = 'تحويل إلى @' + to + (note ? ' — ' + note : '');
 
   try {
-    // 1) إضافة رصيد المستفيد في السيرفر (نجلب آخر رصيد له)
-    let recBal = 0, recSerial = 0;
-    try {
-      const recTx = await sb.select('apex_transactions', { user_id: to }, 'created_at.desc');
-      if (Array.isArray(recTx) && recTx.length > 0) {
-        recBal    = parseFloat(recTx[0].balance_after) || 0;
-        recSerial = parseInt(recTx[0].serial) || recTx.length;
-      }
-    } catch(e) { console.warn('recipient balance load failed:', e); }
-
-    await sb.insert('apex_transactions', {
-      user_id:       to,
-      type:          'إيداع',
-      description:   'تحويل وارد من @' + sender + (note ? ' — ' + note : ''),
-      note:          'تحويل وارد من @' + sender,
-      amount:        amt,
-      balance_after: recBal + amt,
-      refunded:      false,
-      serial:        recSerial + 1,
-      created_at:    new Date().toISOString(),
+    // الخصم والإيداع في دالة واحدة داخل القاعدة:
+    // لا يمكن إضافة رصيد لحساب آخر بلا خصم من المُرسل، ولا تجاوز الرصيد
+    const res = await rpcAuth('bank_transfer', {
+      p_to:     to,
+      p_amount: amt,
+      p_note:   note || '',
     });
+    if (!res || res.ok !== true) {
+      closeTransferModal();
+      if (res?.error === 'insufficient_funds')
+        return toast('warn', 'الرصيد غير كافٍ', 'رصيدك لدى الخادم: ' + fmt(parseFloat(res.balance) || 0));
+      if (res?.error === 'recipient_not_found')
+        return toast('warn', 'فشل التحويل', 'حساب المستفيد غير موجود.');
+      if (res?.error === 'same_account')
+        return toast('warn', 'فشل التحويل', 'لا يمكنك التحويل إلى نفس حسابك.');
+      return toast('warn', 'فشل التحويل', res?.error || 'لم تتم العملية.');
+    }
 
-    // 2) خصم المبلغ من المُرسل (addTx يزامن تلقائياً مع السيرفر)
-    addTx('تحويل', desc, amt);
+    // تسجيل العملية محلياً بما أعاده الخادم — بلا إدخال ثانٍ
+    const svBal = parseFloat(res.balance_after);
+    session.transactions.unshift({
+      id: res.id, serial: res.serial, type: 'تحويل',
+      desc, amount: amt,
+      balance: isFinite(svBal) ? svBal : (session.balance - amt),
+      date: new Date().toISOString(), refunded: false, refundedFromId: null,
+    });
+    if (isFinite(svBal)) session.balance = svBal;
+    session.totalWithdrawals += amt;
+    session.witCount++;
+    session.nextSerial = (res.serial || 0) + 1;
+    updateWitHint();
+    renderAll();
+    persistState();
 
     closeTransferModal();
     document.getElementById('tr_to').value   = '';
@@ -3020,7 +3058,7 @@ async function refreshFromServer(silent = true) {
   if (!silent && icon) icon.classList.add('spin-anim');
 
   try {
-    const txRows = await sb.select('apex_transactions', { user_id: SB_UID }, 'created_at.desc');
+    const txRows = await rpcAuth('bank_fetch_tx');
     const txList = (Array.isArray(txRows) ? txRows : []).map((r, i) => ({
       id:             r.id,
       serial:         r.serial || (i + 1),
@@ -3381,11 +3419,10 @@ function confirmClearTx() {
   renderAll();
   toast('info','تم مسح السجل','تم حذف جميع المعاملات');
 
-  // حذف كل معاملات المستخدم من Supabase
+  // حذف كل معاملات المستخدم عبر دالة محمية
   if (SB_UID) {
-    const url = `${SB_URL}/rest/v1/apex_transactions?user_id=eq.${encodeURIComponent(SB_UID)}`;
-    fetch(url, { method: 'DELETE', headers: sbH() })
-      .catch(e => console.warn('clear tx failed:', e));
+    rpcAuth('bank_clear_tx')
+      .catch(e => toast('warn', 'لم يُمسح السجل من السيرفر', e.message || ''));
   }
 }
 
