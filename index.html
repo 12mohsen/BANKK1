@@ -2514,6 +2514,14 @@ function doLogout() {
   stopBalancePolling();
   sbClearSession();
   clearPersistedState();
+
+  // تفريغ حقول العمليات — وإلا بقي ما كُتب فيها ظاهراً للحساب التالي
+  ['tr_to','tr_amt','tr_note','dep_amt','dep_note','wit_amt','bill_name']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['tr_err','dep_err','wit_err','bill_err'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.classList.add('hidden');
+  });
+
   showView('login');
   if (registeredAccount && registeredAccount.stayConnected) {
     document.getElementById('li_user').value = registeredAccount.username;
